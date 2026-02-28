@@ -44,13 +44,28 @@ public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub)
         return Ok(new JoinGameResponse(game.Id, game.Players.Select(PlayerDto.From).ToList(), GameSettingsDto.From(game.Settings)));
     }
 
-    /// <summary>Starts the game (host only).</summary>
+    /// <summary>Starts the game (host only). Broadcasts a synced countdown then transitions to InRound.</summary>
     [HttpPost("{gameId}/start")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(StartGameResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> StartGame(string gameId, [FromBody] StartGameRequest request, CancellationToken ct)
     {
-        await gameManager.StartGameAsync(gameId, request.PlayerId, ct);
-        return NoContent();
+        var startAt = await gameManager.StartGameAsync(gameId, request.PlayerId, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(
+            GameHubEvents.GameCountdown,
+            new { startAt },
+            ct);
+
+        // Fire-and-forget: transition to InRound after the countdown elapses
+        var delay = startAt - DateTimeOffset.UtcNow;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(delay > TimeSpan.Zero ? delay : TimeSpan.Zero);
+            await gameManager.BeginRoundAsync(gameId);
+            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundStarted, new { gameId });
+        });
+
+        return Ok(new StartGameResponse(startAt));
     }
 
     /// <summary>Gets the current state of a game.</summary>
@@ -67,6 +82,7 @@ public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub)
 public record CreateGameRequest(string HostPlayerId, string DisplayName);
 public record JoinGameRequest(string PlayerId, string DisplayName);
 public record StartGameRequest(string PlayerId);
+public record StartGameResponse(DateTimeOffset StartAt);
 
 // --- Response models ---
 public record CreateGameResponse(string GameId, string JoinCode, GameSettingsDto Settings);
