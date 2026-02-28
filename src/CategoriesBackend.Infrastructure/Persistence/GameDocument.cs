@@ -16,6 +16,7 @@ internal class GameDocument
     [FirestoreProperty] public string HostPlayerId { get; set; } = string.Empty;
     [FirestoreProperty] public string Status { get; set; } = nameof(GameStatus.Lobby);
     [FirestoreProperty] public List<PlayerDocument> Players { get; set; } = [];
+    [FirestoreProperty] public List<RoundDocument> Rounds { get; set; } = [];
     [FirestoreProperty] public GameSettingsDocument Settings { get; set; } = new();
     [FirestoreProperty] public int CurrentRoundIndex { get; set; } = -1;
     [FirestoreProperty] public Timestamp CreatedAt { get; set; }
@@ -27,6 +28,7 @@ internal class GameDocument
         HostPlayerId = game.HostPlayerId,
         Status = game.Status.ToString(),
         Players = game.Players.Select(PlayerDocument.FromPlayer).ToList(),
+        Rounds = game.Rounds.Select(RoundDocument.FromRound).ToList(),
         Settings = GameSettingsDocument.FromSettings(game.Settings),
         CurrentRoundIndex = game.CurrentRoundIndex,
         CreatedAt = Timestamp.FromDateTimeOffset(game.CreatedAt),
@@ -39,6 +41,7 @@ internal class GameDocument
         HostPlayerId = HostPlayerId,
         Status = Enum.TryParse<GameStatus>(Status, out var s) ? s : GameStatus.Lobby,
         Players = Players.Select(p => p.ToPlayer()).ToList(),
+        Rounds = Rounds.Select(r => r.ToRound()).ToList(),
         Settings = Settings.ToSettings(),
         CurrentRoundIndex = CurrentRoundIndex,
         CreatedAt = CreatedAt.ToDateTimeOffset(),
@@ -116,5 +119,40 @@ internal class GameSettingsDocument
         BestAnswerBonusPoints = BestAnswerBonusPoints,
         DisputeVotingWindowSeconds = DisputeVotingWindowSeconds,
         Categories = [..Categories],
+    };
+}
+
+[FirestoreData]
+internal class RoundDocument
+{
+    [FirestoreProperty] public int RoundNumber { get; set; }
+    [FirestoreProperty] public string Letter { get; set; } = string.Empty;
+    [FirestoreProperty] public List<string> Categories { get; set; } = [];
+    [FirestoreProperty] public string Status { get; set; } = nameof(RoundStatus.NotStarted);
+    [FirestoreProperty] public Timestamp StartedAt { get; set; }
+    [FirestoreProperty] public Timestamp EndedAt { get; set; }
+    [FirestoreProperty] public bool HasStartedAt { get; set; }
+    [FirestoreProperty] public bool HasEndedAt { get; set; }
+
+    public static RoundDocument FromRound(Round r) => new()
+    {
+        RoundNumber = r.RoundNumber,
+        Letter = r.Letter.ToString(),
+        Categories = [.. r.Categories],
+        Status = r.Status.ToString(),
+        HasStartedAt = r.StartedAt.HasValue,
+        StartedAt = r.StartedAt.HasValue ? Timestamp.FromDateTimeOffset(r.StartedAt.Value) : default,
+        HasEndedAt = r.EndedAt.HasValue,
+        EndedAt = r.EndedAt.HasValue ? Timestamp.FromDateTimeOffset(r.EndedAt.Value) : default,
+    };
+
+    public Round ToRound() => new()
+    {
+        RoundNumber = RoundNumber,
+        Letter = Letter.Length > 0 ? Letter[0] : 'A',
+        Categories = [.. Categories],
+        Status = Enum.TryParse<RoundStatus>(Status, out var s) ? s : RoundStatus.NotStarted,
+        StartedAt = HasStartedAt ? StartedAt.ToDateTimeOffset() : null,
+        EndedAt = HasEndedAt ? EndedAt.ToDateTimeOffset() : null,
     };
 }

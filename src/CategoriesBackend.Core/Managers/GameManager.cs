@@ -64,13 +64,54 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         return startAt;
     }
 
-    public async Task BeginRoundAsync(string gameId, CancellationToken ct = default)
+    public async Task<Round> BeginRoundAsync(string gameId, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);
-        if (game.Status != GameStatus.Starting) return;
+        if (game.Status != GameStatus.Starting)
+            throw new InvalidOperationException("Game is not in Starting state.");
+
+        if (game.Rounds.Count == 0)
+            game.Rounds = GenerateRounds(game.Settings);
+
+        game.CurrentRoundIndex = 0;
         game.Status = GameStatus.InRound;
+
+        var round = game.Rounds[0];
+        round.Status = RoundStatus.Answering;
+        round.StartedAt = DateTimeOffset.UtcNow;
+        if (game.Settings.IsTimedMode)
+            round.EndedAt = round.StartedAt.Value.AddSeconds(game.Settings.RoundDurationSeconds);
+
         await gameRepository.SaveAsync(game, ct);
+        return round;
     }
+
+    private static List<Round> GenerateRounds(GameSettings settings)
+    {
+        // Exclude letters that are awkward for this game type
+        const string letterPool = "ABCDEFGHIJKLMNOPRSTW";
+        var letters = letterPool
+            .OrderBy(_ => Random.Shared.Next())
+            .Take(settings.MaxRounds)
+            .ToList();
+
+        var categories = settings.Categories.Count > 0
+            ? settings.Categories
+            : DefaultCategories;
+
+        return letters.Select((letter, i) => new Round
+        {
+            RoundNumber = i + 1,
+            Letter = letter,
+            Categories = [.. categories],
+        }).ToList();
+    }
+
+    private static readonly List<string> DefaultCategories =
+    [
+        "A boy's name", "A girl's name", "A country", "An animal",
+        "A city", "A food", "A TV show", "Something you find at school"
+    ];
 
     public async Task<Game> GetGameAsync(string gameId, CancellationToken ct = default)
     {
