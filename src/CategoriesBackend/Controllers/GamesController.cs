@@ -1,12 +1,14 @@
 using CategoriesBackend.Core.Interfaces;
 using CategoriesBackend.Core.Models;
+using CategoriesBackend.Hubs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace CategoriesBackend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class GamesController(IGameManager gameManager) : ControllerBase
+public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub) : ControllerBase
 {
     /// <summary>Creates a new game and returns the join code.</summary>
     [HttpPost]
@@ -24,7 +26,21 @@ public class GamesController(IGameManager gameManager) : ControllerBase
     [ProducesResponseType(typeof(JoinGameResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> JoinGame(string joinCode, [FromBody] JoinGameRequest request, CancellationToken ct)
     {
-        var game = await gameManager.JoinGameAsync(joinCode, request.PlayerId, request.DisplayName, ct);
+        var playerAlreadyInGame = false;
+        var game = await gameManager.GetGameByJoinCodeAsync(joinCode, ct);
+        if (game != null) playerAlreadyInGame = game.Players.Any(p => p.Id == request.PlayerId);
+
+        game = await gameManager.JoinGameAsync(joinCode, request.PlayerId, request.DisplayName, ct);
+
+        if (!playerAlreadyInGame)
+        {
+            var newPlayer = game.Players.First(p => p.Id == request.PlayerId);
+            await hub.Clients.Group(game.Id).SendAsync(
+                GameHubEvents.PlayerJoined,
+                PlayerDto.From(newPlayer),
+                ct);
+        }
+
         return Ok(new JoinGameResponse(game.Id, game.Players.Select(PlayerDto.From).ToList(), GameSettingsDto.From(game.Settings)));
     }
 

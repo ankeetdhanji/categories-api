@@ -68,6 +68,9 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
             ?? throw new InvalidOperationException($"Game '{gameId}' not found.");
     }
 
+    public Task<Game?> GetGameByJoinCodeAsync(string joinCode, CancellationToken ct = default)
+        => gameRepository.GetByJoinCodeAsync(joinCode, ct);
+
     private static string GenerateJoinCode()
     {
         const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
