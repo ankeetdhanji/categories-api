@@ -48,7 +48,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         return game;
     }
 
-    public async Task StartGameAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
+    public async Task<DateTimeOffset> StartGameAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);
 
@@ -58,7 +58,17 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         if (game.Status != GameStatus.Lobby)
             throw new InvalidOperationException("Game is not in lobby state.");
 
+        var startAt = DateTimeOffset.UtcNow.AddSeconds(5);
         game.Status = GameStatus.Starting;
+        await gameRepository.SaveAsync(game, ct);
+        return startAt;
+    }
+
+    public async Task BeginRoundAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        if (game.Status != GameStatus.Starting) return;
+        game.Status = GameStatus.InRound;
         await gameRepository.SaveAsync(game, ct);
     }
 

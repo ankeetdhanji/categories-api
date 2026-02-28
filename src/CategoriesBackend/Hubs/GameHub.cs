@@ -20,6 +20,11 @@ public class GameHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, gameId);
     }
 
+    public async Task SendReaction(string gameId, string emoji)
+    {
+        await Clients.OthersInGroup(gameId).SendAsync(GameHubEvents.EmojiReaction, new { emoji });
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         // TODO: notify game manager of player disconnect; trigger host-transfer grace window if host
