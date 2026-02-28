@@ -56,13 +56,20 @@ public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub)
             new { startAt },
             ct);
 
-        // Fire-and-forget: transition to InRound after the countdown elapses
+        // Fire-and-forget: generate rounds + transition to InRound after countdown elapses
         var delay = startAt - DateTimeOffset.UtcNow;
         _ = Task.Run(async () =>
         {
             await Task.Delay(delay > TimeSpan.Zero ? delay : TimeSpan.Zero);
-            await gameManager.BeginRoundAsync(gameId);
-            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundStarted, new { gameId });
+            var round = await gameManager.BeginRoundAsync(gameId);
+            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundStarted, new
+            {
+                roundNumber = round.RoundNumber,
+                letter = round.Letter.ToString(),
+                categories = round.Categories,
+                startedAt = round.StartedAt,
+                endsAt = round.EndedAt,
+            });
         });
 
         return Ok(new StartGameResponse(startAt));
