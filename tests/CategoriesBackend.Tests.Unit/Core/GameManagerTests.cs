@@ -150,4 +150,107 @@ public class GameManagerTests
 
         Assert.Equal("game-1", result.Id);
     }
+
+    // --- JoinGameAsync ---
+
+    private static Game LobbyGame(int currentPlayers = 1, int maxPlayers = 10) => new()
+    {
+        Id = "game-1",
+        JoinCode = "ABC123",
+        HostPlayerId = "host",
+        Status = GameStatus.Lobby,
+        Players = Enumerable.Range(0, currentPlayers)
+            .Select(i => new Player { Id = $"player-{i}", DisplayName = $"Player {i}" })
+            .ToList(),
+        Settings = new GameSettings { MaxPlayers = maxPlayers }
+    };
+
+    [Fact]
+    public async Task JoinGame_ThrowsInvalidOperation_WhenJoinCodeNotFound()
+    {
+        _repo.GetByJoinCodeAsync("NOPE00", Arg.Any<CancellationToken>()).Returns((Game?)null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.JoinGameAsync("NOPE00", "player-1", "Alice"));
+    }
+
+    [Fact]
+    public async Task JoinGame_ThrowsInvalidOperation_WhenGameAlreadyStarted()
+    {
+        var game = LobbyGame();
+        game.Status = GameStatus.InRound;
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.JoinGameAsync("ABC123", "player-99", "Late Player"));
+    }
+
+    [Fact]
+    public async Task JoinGame_ThrowsInvalidOperation_WhenLobbyIsFull()
+    {
+        var game = LobbyGame(currentPlayers: 10, maxPlayers: 10);
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.JoinGameAsync("ABC123", "player-99", "Late Player"));
+    }
+
+    [Fact]
+    public async Task JoinGame_AddsPlayer_ToLobby()
+    {
+        var game = LobbyGame();
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.JoinGameAsync("ABC123", "player-new", "New Player");
+
+        Assert.Contains(result.Players, p => p.Id == "player-new" && p.DisplayName == "New Player");
+    }
+
+    [Fact]
+    public async Task JoinGame_ReturnsGameId_AndCurrentPlayers_AndSettings()
+    {
+        var game = LobbyGame();
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.JoinGameAsync("ABC123", "player-new", "New Player");
+
+        Assert.Equal("game-1", result.Id);
+        Assert.NotEmpty(result.Players);
+        Assert.NotNull(result.Settings);
+    }
+
+    [Fact]
+    public async Task JoinGame_CallsSaveAsync_WhenPlayerAdded()
+    {
+        var game = LobbyGame();
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.JoinGameAsync("ABC123", "player-new", "New Player");
+
+        await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task JoinGame_IsIdempotent_WhenPlayerAlreadyInLobby()
+    {
+        var game = LobbyGame();
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.JoinGameAsync("ABC123", "player-0", "Player 0");
+
+        Assert.Single(result.Players, p => p.Id == "player-0");
+        await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task JoinGame_NewPlayer_IsConnected()
+    {
+        var game = LobbyGame();
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.JoinGameAsync("ABC123", "player-new", "New Player");
+
+        var newPlayer = result.Players.Single(p => p.Id == "player-new");
+        Assert.True(newPlayer.IsConnected);
+    }
 }
