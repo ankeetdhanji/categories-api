@@ -41,12 +41,15 @@ public class RoundsController(
         if (game.HostPlayerId != request.PlayerId)
             return Forbid();
 
+        // Use in-memory round data (already loaded) to avoid an extra Firestore
+        // read between EndRoundAsync and the RoundEnded broadcast.
+        var currentRound = game.Rounds[game.CurrentRoundIndex];
+
         await roundManager.EndRoundAsync(gameId, ct);
 
-        var round = await roundManager.GetCurrentRoundAsync(gameId, ct);
         await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
         {
-            roundNumber = round.RoundNumber,
+            roundNumber = currentRound.RoundNumber,
         }, ct);
 
         var scoreResult = await roundManager.ScoreRoundAsync(gameId, ct);
@@ -62,7 +65,7 @@ public class RoundsController(
         {
             await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeFlagged, new
             {
-                roundNumber = round.RoundNumber,
+                roundNumber = currentRound.RoundNumber,
                 disputes = disputes.Select(d => new
                 {
                     id = d.Id,
