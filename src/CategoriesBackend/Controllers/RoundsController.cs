@@ -78,7 +78,89 @@ public class RoundsController(
 
         return Ok();
     }
+
+    [HttpGet("{roundNumber}/results")]
+    public async Task<IActionResult> GetRoundResults(string gameId, int roundNumber, CancellationToken ct)
+    {
+        var results = await roundManager.GetRoundResultsAsync(gameId, roundNumber, ct);
+        return Ok(results);
+    }
+
+    [HttpPost("{roundNumber}/disputes/{disputeId}/vote")]
+    public async Task<IActionResult> VoteOnDispute(
+        string gameId, int roundNumber, string disputeId,
+        [FromBody] DisputeVoteRequest request, CancellationToken ct)
+    {
+        var (voteCount, totalVoters, resolved, isValid) =
+            await disputeManager.CastDisputeVoteAsync(gameId, request.PlayerId, disputeId, request.IsValid, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeVoteUpdated, new
+        {
+            disputeId,
+            voteCount,
+            totalVoters,
+        }, ct);
+
+        if (resolved)
+        {
+            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeResolved, new
+            {
+                disputeId,
+                isValid,
+            }, ct);
+        }
+
+        return Ok(new { voteCount, totalVoters, resolved, isValid });
+    }
+
+    [HttpPost("{roundNumber}/likes")]
+    public async Task<IActionResult> LikeAnswer(
+        string gameId, int roundNumber,
+        [FromBody] LikeAnswerRequest request, CancellationToken ct)
+    {
+        await roundManager.LikeAnswerAsync(gameId, roundNumber, request.PlayerId, request.Category, request.NormalizedAnswer, ct);
+        return Ok();
+    }
+
+    /// <summary>Host-only: advance to next category in review phase. Auto-resolves pending disputes in the current category.</summary>
+    [HttpPost("current/review/advance")]
+    public async Task<IActionResult> AdvanceCategory(string gameId, [FromBody] AdvanceCategoryRequest request, CancellationToken ct)
+    {
+        var game = await gameManager.GetGameAsync(gameId, ct);
+        if (game.HostPlayerId != request.PlayerId)
+            return Forbid();
+
+        var round = game.Rounds[game.CurrentRoundIndex];
+
+        // Resolve all pending disputes in the current category before advancing
+        if (request.CurrentCategoryIndex >= 0 && request.CurrentCategoryIndex < round.Categories.Count)
+        {
+            var currentCategory = round.Categories[request.CurrentCategoryIndex];
+            await disputeManager.ResolveAllPendingForCategoryAsync(gameId, currentCategory, ct);
+        }
+
+        var nextIndex = request.CurrentCategoryIndex + 1;
+        var isLastCategory = nextIndex >= round.Categories.Count;
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.CategoryAdvanced, new
+        {
+            categoryIndex = nextIndex,
+        }, ct);
+
+        if (isLastCategory)
+        {
+            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.ReviewComplete, new
+            {
+                roundNumber = round.RoundNumber,
+            }, ct);
+        }
+
+        return Ok(new { categoryIndex = nextIndex, isLastCategory });
+    }
 }
 
 public record SubmitAnswersRequest(string PlayerId, Dictionary<string, string> Answers);
 public record EndRoundRequest(string PlayerId);
+public record DisputeVoteRequest(string PlayerId, bool IsValid);
+public record LikeAnswerRequest(string PlayerId, string Category, string NormalizedAnswer);
+public record AdvanceCategoryRequest(string PlayerId, int CurrentCategoryIndex);

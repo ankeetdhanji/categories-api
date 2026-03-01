@@ -92,6 +92,73 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         return game.Rounds[game.CurrentRoundIndex];
     }
 
+    public async Task<RoundReviewResult> GetRoundResultsAsync(string gameId, int roundNumber, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        var round = game.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber)
+            ?? throw new InvalidOperationException($"Round {roundNumber} not found.");
+
+        // Build a lookup: normalizedAnswer → list of playerIds, per category
+        var playerLookup = game.Players.ToDictionary(p => p.Id);
+
+        // disputeId → set of playerIds who authored that disputed answer
+        var disputedAnswerIds = round.Disputes
+            .GroupBy(d => d.Id)
+            .ToDictionary(g => g.Key, g => g.Select(d => d.PlayerId).ToHashSet());
+
+        var categories = round.Categories.Select(category =>
+        {
+            // Group players by their normalized answer for this category
+            var groups = round.Answers.Values
+                .Where(pa => pa.NormalizedAnswers.TryGetValue(category, out var norm) && !string.IsNullOrWhiteSpace(norm))
+                .GroupBy(pa => pa.NormalizedAnswers[category])
+                .ToList();
+
+            var entries = groups.Select(group =>
+            {
+                var normalizedAnswer = group.Key;
+                var disputeId = $"{category}:{normalizedAnswer}";
+                var isDisputed = disputedAnswerIds.ContainsKey(disputeId);
+
+                var players = group
+                    .Select(pa => playerLookup.TryGetValue(pa.PlayerId, out var p)
+                        ? new PlayerRef(p.Id, p.DisplayName)
+                        : new PlayerRef(pa.PlayerId, pa.PlayerId))
+                    .ToList();
+
+                // Use the raw answer from the first player in the group
+                var rawAnswer = group.First().Answers.TryGetValue(category, out var raw) ? raw : normalizedAnswer;
+
+                return new AnswerEntry(
+                    RawAnswer: rawAnswer,
+                    NormalizedAnswer: normalizedAnswer,
+                    Players: players,
+                    IsShared: group.Count() > 1,
+                    IsUnique: group.Count() == 1,
+                    IsDisputed: isDisputed,
+                    DisputeId: isDisputed ? disputeId : null);
+            }).ToList();
+
+            return new CategoryReview(category, entries);
+        }).ToList();
+
+        return new RoundReviewResult(round.RoundNumber, round.Letter, categories);
+    }
+
+    public async Task LikeAnswerAsync(string gameId, int roundNumber, string playerId, string category, string normalizedAnswer, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        var round = game.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber)
+            ?? throw new InvalidOperationException($"Round {roundNumber} not found.");
+
+        if (!round.CategoryLikes.ContainsKey(category))
+            round.CategoryLikes[category] = [];
+
+        round.CategoryLikes[category][playerId] = normalizedAnswer;
+
+        await gameRepository.SaveAsync(game, ct);
+    }
+
     private async Task<Game> GetGameAsync(string gameId, CancellationToken ct)
         => await gameRepository.GetByIdAsync(gameId, ct)
            ?? throw new InvalidOperationException($"Game '{gameId}' not found.");

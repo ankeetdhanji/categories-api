@@ -55,6 +55,11 @@ public static class GameHubEvents
     // Round activity
     public const string PlayerSubmitted = "PlayerSubmitted";
 
+    // Review phase
+    public const string CategoryAdvanced = "CategoryAdvanced";
+    public const string DisputeVoteUpdated = "DisputeVoteUpdated";
+    public const string ReviewComplete = "ReviewComplete";
+
     // Reactions
     public const string EmojiReaction = "EmojiReaction";
 }
