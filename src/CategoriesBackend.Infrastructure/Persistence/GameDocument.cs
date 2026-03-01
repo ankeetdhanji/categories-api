@@ -168,8 +168,8 @@ internal class RoundDocument
         Answers = Answers.ToDictionary(kv => kv.Key, kv => kv.Value.ToPlayerAnswers()),
         RoundScores = new Dictionary<string, int>(RoundScores),
         Disputes = Disputes.Select(d => d.ToDispute()).ToList(),
-        DisputeVotes = DisputeVotes.ToDictionary(kv => kv.Key, kv => new Dictionary<string, bool>(kv.Value)),
-        CategoryLikes = CategoryLikes.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
+        DisputeVotes = (DisputeVotes ?? []).ToDictionary(kv => kv.Key, kv => new Dictionary<string, bool>(kv.Value)),
+        CategoryLikes = (CategoryLikes ?? []).ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
     };
 }
 
