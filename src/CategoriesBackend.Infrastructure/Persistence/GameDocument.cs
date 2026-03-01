@@ -137,6 +137,8 @@ internal class RoundDocument
     [FirestoreProperty] public Dictionary<string, PlayerAnswersDocument> Answers { get; set; } = [];
     [FirestoreProperty] public Dictionary<string, int> RoundScores { get; set; } = [];
     [FirestoreProperty] public List<DisputeDocument> Disputes { get; set; } = [];
+    [FirestoreProperty] public Dictionary<string, Dictionary<string, bool>> DisputeVotes { get; set; } = [];
+    [FirestoreProperty] public Dictionary<string, Dictionary<string, string>> CategoryLikes { get; set; } = [];
 
     public static RoundDocument FromRound(Round r) => new()
     {
@@ -151,6 +153,8 @@ internal class RoundDocument
         Answers = r.Answers.ToDictionary(kv => kv.Key, kv => PlayerAnswersDocument.From(kv.Value)),
         RoundScores = new Dictionary<string, int>(r.RoundScores),
         Disputes = r.Disputes.Select(DisputeDocument.From).ToList(),
+        DisputeVotes = r.DisputeVotes.ToDictionary(kv => kv.Key, kv => new Dictionary<string, bool>(kv.Value)),
+        CategoryLikes = r.CategoryLikes.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
     };
 
     public Round ToRound() => new()
@@ -164,6 +168,8 @@ internal class RoundDocument
         Answers = Answers.ToDictionary(kv => kv.Key, kv => kv.Value.ToPlayerAnswers()),
         RoundScores = new Dictionary<string, int>(RoundScores),
         Disputes = Disputes.Select(d => d.ToDispute()).ToList(),
+        DisputeVotes = (DisputeVotes ?? []).ToDictionary(kv => kv.Key, kv => new Dictionary<string, bool>(kv.Value)),
+        CategoryLikes = (CategoryLikes ?? []).ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
     };
 }
 

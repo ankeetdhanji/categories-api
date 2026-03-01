@@ -8,6 +8,10 @@ public class Round
     public Dictionary<string, PlayerAnswers> Answers { get; set; } = []; // keyed by playerId
     public Dictionary<string, int> RoundScores { get; set; } = [];       // playerId → points earned this round
     public List<Dispute> Disputes { get; set; } = [];
+    /// <summary>disputeId → (votingPlayerId → isValid). Persisted to Firestore.</summary>
+    public Dictionary<string, Dictionary<string, bool>> DisputeVotes { get; set; } = [];
+    /// <summary>category → (likingPlayerId → normalizedAnswer they liked). Persisted to Firestore.</summary>
+    public Dictionary<string, Dictionary<string, string>> CategoryLikes { get; set; } = [];
     public RoundStatus Status { get; set; } = RoundStatus.NotStarted;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? EndedAt { get; set; }
