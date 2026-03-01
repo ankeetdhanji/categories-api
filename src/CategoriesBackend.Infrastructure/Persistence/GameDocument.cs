@@ -133,6 +133,7 @@ internal class RoundDocument
     [FirestoreProperty] public Timestamp EndedAt { get; set; }
     [FirestoreProperty] public bool HasStartedAt { get; set; }
     [FirestoreProperty] public bool HasEndedAt { get; set; }
+    [FirestoreProperty] public Dictionary<string, PlayerAnswersDocument> Answers { get; set; } = [];
 
     public static RoundDocument FromRound(Round r) => new()
     {
@@ -144,6 +145,7 @@ internal class RoundDocument
         StartedAt = r.StartedAt.HasValue ? Timestamp.FromDateTimeOffset(r.StartedAt.Value) : default,
         HasEndedAt = r.EndedAt.HasValue,
         EndedAt = r.EndedAt.HasValue ? Timestamp.FromDateTimeOffset(r.EndedAt.Value) : default,
+        Answers = r.Answers.ToDictionary(kv => kv.Key, kv => PlayerAnswersDocument.From(kv.Value)),
     };
 
     public Round ToRound() => new()
@@ -154,5 +156,31 @@ internal class RoundDocument
         Status = Enum.TryParse<RoundStatus>(Status, out var s) ? s : RoundStatus.NotStarted,
         StartedAt = HasStartedAt ? StartedAt.ToDateTimeOffset() : null,
         EndedAt = HasEndedAt ? EndedAt.ToDateTimeOffset() : null,
+        Answers = Answers.ToDictionary(kv => kv.Key, kv => kv.Value.ToPlayerAnswers()),
+    };
+}
+
+[FirestoreData]
+internal class PlayerAnswersDocument
+{
+    [FirestoreProperty] public string PlayerId { get; set; } = string.Empty;
+    [FirestoreProperty] public Dictionary<string, string> Answers { get; set; } = [];
+    [FirestoreProperty] public Dictionary<string, string> NormalizedAnswers { get; set; } = [];
+    [FirestoreProperty] public bool IsSubmitted { get; set; }
+
+    public static PlayerAnswersDocument From(PlayerAnswers pa) => new()
+    {
+        PlayerId = pa.PlayerId,
+        Answers = new Dictionary<string, string>(pa.Answers),
+        NormalizedAnswers = new Dictionary<string, string>(pa.NormalizedAnswers),
+        IsSubmitted = pa.IsSubmitted,
+    };
+
+    public PlayerAnswers ToPlayerAnswers() => new()
+    {
+        PlayerId = PlayerId,
+        Answers = new Dictionary<string, string>(Answers),
+        NormalizedAnswers = new Dictionary<string, string>(NormalizedAnswers),
+        IsSubmitted = IsSubmitted,
     };
 }

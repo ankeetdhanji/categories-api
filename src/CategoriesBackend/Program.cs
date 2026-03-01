@@ -22,8 +22,9 @@ if (!string.IsNullOrWhiteSpace(gcpProjectId))
 
 // Core services
 builder.Services.AddScoped<IGameManager, GameManager>();
+builder.Services.AddScoped<IRoundManager, RoundManager>();
 builder.Services.AddScoped<IScoringEngine, ScoringEngine>();
-// TODO: register IRoundManager, IDisputeManager
+// TODO: register IDisputeManager
 
 builder.Services.AddCors(options =>
 {
