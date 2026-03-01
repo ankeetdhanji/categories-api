@@ -49,11 +49,12 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
     [ProducesResponseType(typeof(StartGameResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> StartGame(string gameId, [FromBody] StartGameRequest request, CancellationToken ct)
     {
-        var startAt = await gameManager.StartGameAsync(gameId, request.PlayerId, ct);
+        var result = await gameManager.StartGameAsync(gameId, request.PlayerId, ct);
+        var startAt = result.StartAt;
 
         await hub.Clients.Group(gameId).SendAsync(
             GameHubEvents.GameCountdown,
-            new { startAt },
+            new { startAt, letter = result.Letter.ToString(), roundNumber = result.RoundNumber },
             ct);
 
         // Fire-and-forget: begin round after countdown, then lock it when the timer expires

@@ -48,7 +48,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         return game;
     }
 
-    public async Task<DateTimeOffset> StartGameAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
+    public async Task<StartGameResult> StartGameAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);
 
@@ -58,10 +58,15 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         if (game.Status != GameStatus.Lobby)
             throw new InvalidOperationException("Game is not in lobby state.");
 
+        // Pre-generate rounds so the letter is known before the countdown fires
+        game.Rounds = GenerateRounds(game.Settings);
+
         var startAt = DateTimeOffset.UtcNow.AddSeconds(5);
         game.Status = GameStatus.Starting;
         await gameRepository.SaveAsync(game, ct);
-        return startAt;
+
+        var firstRound = game.Rounds[0];
+        return new StartGameResult(startAt, firstRound.Letter, firstRound.RoundNumber);
     }
 
     public async Task<Round> BeginRoundAsync(string gameId, CancellationToken ct = default)
