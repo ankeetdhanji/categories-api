@@ -8,7 +8,7 @@ namespace CategoriesBackend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class GamesController(IGameManager gameManager, IRoundManager roundManager, IHubContext<GameHub> hub) : ControllerBase
+public class GamesController(IGameManager gameManager, IRoundManager roundManager, IDisputeManager disputeManager, IHubContext<GameHub> hub) : ControllerBase
 {
     /// <summary>Creates a new game and returns the join code.</summary>
     [HttpPost]
@@ -88,6 +88,22 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
                     roundScores = result.RoundScores,
                     leaderboard = result.Leaderboard,
                 });
+
+                var disputes = await disputeManager.DetectDisputesAsync(gameId);
+                if (disputes.Count > 0)
+                {
+                    await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeFlagged, new
+                    {
+                        roundNumber = round.RoundNumber,
+                        disputes = disputes.Select(d => new
+                        {
+                            id = d.Id,
+                            category = d.Category,
+                            playerId = d.PlayerId,
+                            rawAnswer = d.RawAnswer,
+                        }),
+                    });
+                }
             }
         });
 
