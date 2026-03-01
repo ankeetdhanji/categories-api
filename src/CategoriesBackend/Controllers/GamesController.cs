@@ -8,7 +8,7 @@ namespace CategoriesBackend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub) : ControllerBase
+public class GamesController(IGameManager gameManager, IRoundManager roundManager, IHubContext<GameHub> hub) : ControllerBase
 {
     /// <summary>Creates a new game and returns the join code.</summary>
     [HttpPost]
@@ -56,7 +56,7 @@ public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub)
             new { startAt },
             ct);
 
-        // Fire-and-forget: generate rounds + transition to InRound after countdown elapses
+        // Fire-and-forget: begin round after countdown, then lock it when the timer expires
         var delay = startAt - DateTimeOffset.UtcNow;
         _ = Task.Run(async () =>
         {
@@ -70,6 +70,17 @@ public class GamesController(IGameManager gameManager, IHubContext<GameHub> hub)
                 startedAt = round.StartedAt,
                 endsAt = round.EndedAt,
             });
+
+            if (round.EndedAt.HasValue)
+            {
+                var roundDelay = round.EndedAt.Value - DateTimeOffset.UtcNow;
+                await Task.Delay(roundDelay > TimeSpan.Zero ? roundDelay : TimeSpan.Zero);
+                await roundManager.EndRoundAsync(gameId);
+                await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
+                {
+                    roundNumber = round.RoundNumber,
+                });
+            }
         });
 
         return Ok(new StartGameResponse(startAt));

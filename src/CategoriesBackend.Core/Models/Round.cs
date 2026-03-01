@@ -25,6 +25,7 @@ public enum RoundStatus
 public class PlayerAnswers
 {
     public string PlayerId { get; set; } = string.Empty;
-    public Dictionary<string, string> Answers { get; set; } = []; // category → answer
+    public Dictionary<string, string> Answers { get; set; } = [];           // category → raw answer
+    public Dictionary<string, string> NormalizedAnswers { get; set; } = []; // category → trimmed lowercase
     public bool IsSubmitted { get; set; }
 }
