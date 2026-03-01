@@ -80,6 +80,14 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
                 {
                     roundNumber = round.RoundNumber,
                 });
+
+                var result = await roundManager.ScoreRoundAsync(gameId);
+                await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+                {
+                    roundNumber = result.RoundNumber,
+                    roundScores = result.RoundScores,
+                    leaderboard = result.Leaderboard,
+                });
             }
         });
 

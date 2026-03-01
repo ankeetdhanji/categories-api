@@ -6,6 +6,7 @@ public class Round
     public char Letter { get; set; }
     public List<string> Categories { get; set; } = [];
     public Dictionary<string, PlayerAnswers> Answers { get; set; } = []; // keyed by playerId
+    public Dictionary<string, int> RoundScores { get; set; } = [];       // playerId → points earned this round
     public RoundStatus Status { get; set; } = RoundStatus.NotStarted;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? EndedAt { get; set; }

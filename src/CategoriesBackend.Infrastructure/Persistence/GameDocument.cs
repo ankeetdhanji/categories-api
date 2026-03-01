@@ -134,6 +134,7 @@ internal class RoundDocument
     [FirestoreProperty] public bool HasStartedAt { get; set; }
     [FirestoreProperty] public bool HasEndedAt { get; set; }
     [FirestoreProperty] public Dictionary<string, PlayerAnswersDocument> Answers { get; set; } = [];
+    [FirestoreProperty] public Dictionary<string, int> RoundScores { get; set; } = [];
 
     public static RoundDocument FromRound(Round r) => new()
     {
@@ -146,6 +147,7 @@ internal class RoundDocument
         HasEndedAt = r.EndedAt.HasValue,
         EndedAt = r.EndedAt.HasValue ? Timestamp.FromDateTimeOffset(r.EndedAt.Value) : default,
         Answers = r.Answers.ToDictionary(kv => kv.Key, kv => PlayerAnswersDocument.From(kv.Value)),
+        RoundScores = new Dictionary<string, int>(r.RoundScores),
     };
 
     public Round ToRound() => new()
@@ -157,6 +159,7 @@ internal class RoundDocument
         StartedAt = HasStartedAt ? StartedAt.ToDateTimeOffset() : null,
         EndedAt = HasEndedAt ? EndedAt.ToDateTimeOffset() : null,
         Answers = Answers.ToDictionary(kv => kv.Key, kv => kv.Value.ToPlayerAnswers()),
+        RoundScores = new Dictionary<string, int>(RoundScores),
     };
 }
 
