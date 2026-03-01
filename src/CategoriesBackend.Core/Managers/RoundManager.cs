@@ -16,13 +16,16 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
     {
         var game = await GetGameAsync(gameId, ct);
 
-        if (game.Status != GameStatus.InRound)
-            throw new InvalidOperationException("No round is currently in progress.");
+        if (game.CurrentRoundIndex < 0 || game.CurrentRoundIndex >= game.Rounds.Count)
+            throw new InvalidOperationException("No active round.");
 
         var round = game.Rounds[game.CurrentRoundIndex];
 
-        if (round.Status == RoundStatus.Locked)
-            throw new InvalidOperationException("Round is locked; no further submissions accepted.");
+        // Accept late submissions from clients that hadn't submitted before the host
+        // force-ended the round (they receive RoundEnded and auto-submit).
+        // If the round is already scored, skip silently — the answers are too late.
+        if (round.RoundScores.Count > 0)
+            return;
 
         var normalized = answers.ToDictionary(
             kv => kv.Key,
