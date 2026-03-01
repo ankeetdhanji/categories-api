@@ -11,10 +11,17 @@ public class ScoringEngine : IScoringEngine
 
         foreach (var category in round.Categories)
         {
-            // Gather all non-empty answers for this category, normalised to lowercase
+            // Use pre-normalised answers (stored on submit); fall back to inline normalisation
             var answersByPlayer = round.Answers
-                .Where(kv => kv.Value.Answers.TryGetValue(category, out var ans) && !string.IsNullOrWhiteSpace(ans))
-                .ToDictionary(kv => kv.Key, kv => kv.Value.Answers[category].Trim().ToLowerInvariant());
+                .Select(kv =>
+                {
+                    var norm = kv.Value.NormalizedAnswers.TryGetValue(category, out var n) ? n
+                        : kv.Value.Answers.TryGetValue(category, out var raw) ? raw.Trim().ToLowerInvariant()
+                        : string.Empty;
+                    return (playerId: kv.Key, norm);
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.norm))
+                .ToDictionary(x => x.playerId, x => x.norm);
 
             if (answersByPlayer.Count == 0)
                 continue;

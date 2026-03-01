@@ -4,7 +4,7 @@ using CategoriesBackend.Core.Models;
 
 namespace CategoriesBackend.Core.Managers;
 
-public class RoundManager(IGameRepository gameRepository) : IRoundManager
+public class RoundManager(IGameRepository gameRepository, IScoringEngine scoringEngine) : IRoundManager
 {
     public async Task StartRoundAsync(string gameId, CancellationToken ct = default)
     {
@@ -48,6 +48,38 @@ public class RoundManager(IGameRepository gameRepository) : IRoundManager
 
         round.Status = RoundStatus.Locked;
         await gameRepository.SaveAsync(game, ct);
+    }
+
+    public async Task<RoundScoreResult> ScoreRoundAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        var round = game.Rounds[game.CurrentRoundIndex];
+
+        var roundScores = scoringEngine.ComputeRoundScores(round, game.Settings);
+
+        // Persist the per-round breakdown on the round itself
+        round.RoundScores = roundScores;
+
+        // Add to each player's running total
+        foreach (var player in game.Players)
+        {
+            if (roundScores.TryGetValue(player.Id, out var pts))
+                player.TotalScore += pts;
+        }
+
+        game.Status = GameStatus.RoundResults;
+        await gameRepository.SaveAsync(game, ct);
+
+        var leaderboard = game.Players
+            .OrderByDescending(p => p.TotalScore)
+            .Select(p => new LeaderboardEntry(
+                p.Id,
+                p.DisplayName,
+                p.TotalScore,
+                roundScores.TryGetValue(p.Id, out var r) ? r : 0))
+            .ToList();
+
+        return new RoundScoreResult(round.RoundNumber, roundScores, leaderboard);
     }
 
     public async Task<Round> GetCurrentRoundAsync(string gameId, CancellationToken ct = default)
