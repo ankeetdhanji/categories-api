@@ -52,6 +52,9 @@ public static class GameHubEvents
     public const string DisputeResolved = "DisputeResolved";
     public const string LeaderboardUpdated = "LeaderboardUpdated";
 
+    // Round activity
+    public const string PlayerSubmitted = "PlayerSubmitted";
+
     // Reactions
     public const string EmojiReaction = "EmojiReaction";
 }
