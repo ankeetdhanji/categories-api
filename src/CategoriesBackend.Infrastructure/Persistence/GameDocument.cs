@@ -1,6 +1,7 @@
 using CategoriesBackend.Core.Enums;
 using CategoriesBackend.Core.Models;
 using Google.Cloud.Firestore;
+using DisputeStatus = CategoriesBackend.Core.Models.DisputeStatus;
 
 namespace CategoriesBackend.Infrastructure.Persistence;
 
@@ -135,6 +136,7 @@ internal class RoundDocument
     [FirestoreProperty] public bool HasEndedAt { get; set; }
     [FirestoreProperty] public Dictionary<string, PlayerAnswersDocument> Answers { get; set; } = [];
     [FirestoreProperty] public Dictionary<string, int> RoundScores { get; set; } = [];
+    [FirestoreProperty] public List<DisputeDocument> Disputes { get; set; } = [];
 
     public static RoundDocument FromRound(Round r) => new()
     {
@@ -148,6 +150,7 @@ internal class RoundDocument
         EndedAt = r.EndedAt.HasValue ? Timestamp.FromDateTimeOffset(r.EndedAt.Value) : default,
         Answers = r.Answers.ToDictionary(kv => kv.Key, kv => PlayerAnswersDocument.From(kv.Value)),
         RoundScores = new Dictionary<string, int>(r.RoundScores),
+        Disputes = r.Disputes.Select(DisputeDocument.From).ToList(),
     };
 
     public Round ToRound() => new()
@@ -160,6 +163,7 @@ internal class RoundDocument
         EndedAt = HasEndedAt ? EndedAt.ToDateTimeOffset() : null,
         Answers = Answers.ToDictionary(kv => kv.Key, kv => kv.Value.ToPlayerAnswers()),
         RoundScores = new Dictionary<string, int>(RoundScores),
+        Disputes = Disputes.Select(d => d.ToDispute()).ToList(),
     };
 }
 
@@ -185,5 +189,36 @@ internal class PlayerAnswersDocument
         Answers = new Dictionary<string, string>(Answers),
         NormalizedAnswers = new Dictionary<string, string>(NormalizedAnswers),
         IsSubmitted = IsSubmitted,
+    };
+}
+
+[FirestoreData]
+internal class DisputeDocument
+{
+    [FirestoreProperty] public string Id { get; set; } = string.Empty;
+    [FirestoreProperty] public string Category { get; set; } = string.Empty;
+    [FirestoreProperty] public string PlayerId { get; set; } = string.Empty;
+    [FirestoreProperty] public string RawAnswer { get; set; } = string.Empty;
+    [FirestoreProperty] public string NormalizedAnswer { get; set; } = string.Empty;
+    [FirestoreProperty] public string Status { get; set; } = nameof(DisputeStatus.Pending);
+
+    public static DisputeDocument From(Dispute d) => new()
+    {
+        Id = d.Id,
+        Category = d.Category,
+        PlayerId = d.PlayerId,
+        RawAnswer = d.RawAnswer,
+        NormalizedAnswer = d.NormalizedAnswer,
+        Status = d.Status.ToString(),
+    };
+
+    public Dispute ToDispute() => new()
+    {
+        Id = Id,
+        Category = Category,
+        PlayerId = PlayerId,
+        RawAnswer = RawAnswer,
+        NormalizedAnswer = NormalizedAnswer,
+        Status = Enum.TryParse<DisputeStatus>(Status, out var s) ? s : DisputeStatus.Pending,
     };
 }
