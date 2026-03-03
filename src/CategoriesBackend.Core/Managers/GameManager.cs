@@ -136,6 +136,68 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         await gameRepository.SaveAsync(game, ct);
     }
 
+    public async Task<BestAnswerBonusResult> ApplyBestAnswerBonusAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct)
+            ?? throw new KeyNotFoundException($"Game '{gameId}' not found.");
+
+        if (game.HostPlayerId != requestingPlayerId)
+            throw new UnauthorizedAccessException("Only the host can finalize the game.");
+
+        // Tally how many likes each player's answers received, across all rounds and categories.
+        // For each like, find every player who gave that normalized answer in that category.
+        var votesByPlayer = game.Players.ToDictionary(p => p.Id, _ => 0);
+
+        foreach (var round in game.Rounds)
+        {
+            foreach (var (category, categoryLikes) in round.CategoryLikes)
+            {
+                foreach (var (_, likedNorm) in categoryLikes)
+                {
+                    foreach (var (authorId, playerAnswers) in round.Answers)
+                    {
+                        if (playerAnswers.NormalizedAnswers.TryGetValue(category, out var norm)
+                            && norm == likedNorm
+                            && votesByPlayer.ContainsKey(authorId))
+                        {
+                            votesByPlayer[authorId]++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Persist best-answer vote counts on each player
+        foreach (var player in game.Players)
+            player.BestAnswerVotes = votesByPlayer.GetValueOrDefault(player.Id);
+
+        // Determine winner(s): highest votes (only award if at least 1 vote was cast in total)
+        var maxVotes = votesByPlayer.Values.DefaultIfEmpty(0).Max();
+        var winnerIds = maxVotes > 0
+            ? votesByPlayer.Where(kv => kv.Value == maxVotes).Select(kv => kv.Key).ToList()
+            : [];
+
+        // Integer split: bonus per winner (floor division; remainder is dropped)
+        var bonusPerWinner = winnerIds.Count > 0 ? game.Settings.BestAnswerBonusPoints / winnerIds.Count : 0;
+
+        foreach (var player in game.Players)
+        {
+            if (winnerIds.Contains(player.Id))
+                player.TotalScore += bonusPerWinner;
+        }
+
+        game.Status = GameStatus.Finished;
+        await gameRepository.SaveAsync(game, ct);
+
+        var finalLeaderboard = game.Players
+            .OrderByDescending(p => p.TotalScore)
+            .ThenByDescending(p => p.BestAnswerVotes)
+            .Select(p => new FinalLeaderboardEntry(p.Id, p.DisplayName, p.TotalScore, p.BestAnswerVotes))
+            .ToList();
+
+        return new BestAnswerBonusResult(votesByPlayer, winnerIds, bonusPerWinner, finalLeaderboard);
+    }
+
     private static string GenerateJoinCode()
     {
         const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

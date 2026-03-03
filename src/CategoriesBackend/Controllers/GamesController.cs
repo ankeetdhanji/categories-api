@@ -147,6 +147,32 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
 
         return Ok();
     }
+
+    /// <summary>
+    /// Finalizes the game (host only): tallies best-answer votes, applies end-game bonus,
+    /// marks game as Finished, and broadcasts the final leaderboard.
+    /// </summary>
+    [HttpPost("{gameId}/finalize")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> FinalizeGame(string gameId, [FromBody] FinalizeGameRequest request, CancellationToken ct)
+    {
+        var result = await gameManager.ApplyBestAnswerBonusAsync(gameId, request.PlayerId, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+        {
+            roundNumber = -1, // -1 signals the final post-bonus leaderboard
+            leaderboard = result.FinalLeaderboard,
+            winnerPlayerIds = result.WinnerPlayerIds,
+            bonusPerWinner = result.BonusPerWinner,
+        }, ct);
+
+        return Ok(new
+        {
+            winnerPlayerIds = result.WinnerPlayerIds,
+            bonusPerWinner = result.BonusPerWinner,
+            leaderboard = result.FinalLeaderboard,
+        });
+    }
 }
 
 // --- Request models ---
@@ -155,6 +181,7 @@ public record JoinGameRequest(string PlayerId, string DisplayName);
 public record StartGameRequest(string PlayerId);
 public record UpdateSettingsRequest(string PlayerId, GameSettingsDto Settings);
 public record StartGameResponse(DateTimeOffset StartAt);
+public record FinalizeGameRequest(string PlayerId);
 
 // --- Response models ---
 public record CreateGameResponse(string GameId, string JoinCode, GameSettingsDto Settings);
