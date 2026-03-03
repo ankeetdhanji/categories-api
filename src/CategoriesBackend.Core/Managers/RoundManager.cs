@@ -58,6 +58,19 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         var game = await GetGameAsync(gameId, ct);
         var round = game.Rounds[game.CurrentRoundIndex];
 
+        // Idempotency guard: if round was already scored (e.g. timed mode fired and host also
+        // force-ended), return the existing result without re-scoring or double-updating totals.
+        if (round.RoundScores.Count > 0)
+        {
+            var existingLeaderboard = game.Players
+                .OrderByDescending(p => p.TotalScore)
+                .Select(p => new LeaderboardEntry(
+                    p.Id, p.DisplayName, p.TotalScore,
+                    round.RoundScores.TryGetValue(p.Id, out var r) ? r : 0))
+                .ToList();
+            return new RoundScoreResult(round.RoundNumber, round.RoundScores, existingLeaderboard);
+        }
+
         var roundScores = scoringEngine.ComputeRoundScores(round, game.Settings);
 
         // Persist the per-round breakdown on the round itself
