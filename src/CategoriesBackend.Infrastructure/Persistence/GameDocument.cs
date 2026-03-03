@@ -119,7 +119,7 @@ internal class GameSettingsDocument
         SharedAnswerPoints = SharedAnswerPoints,
         BestAnswerBonusPoints = BestAnswerBonusPoints,
         DisputeVotingWindowSeconds = DisputeVotingWindowSeconds,
-        Categories = [..Categories],
+        Categories = Categories.Count > 0 ? [..Categories] : [..GameSettings.DefaultCategories],
     };
 }
 

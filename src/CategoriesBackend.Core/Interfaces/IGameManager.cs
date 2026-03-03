@@ -10,6 +10,7 @@ public interface IGameManager
     Task<Round> BeginRoundAsync(string gameId, CancellationToken ct = default);
     Task<Game> GetGameAsync(string gameId, CancellationToken ct = default);
     Task<Game?> GetGameByJoinCodeAsync(string joinCode, CancellationToken ct = default);
+    Task UpdateGameSettingsAsync(string gameId, string requestingPlayerId, GameSettings settings, CancellationToken ct = default);
 }
 
 public record StartGameResult(DateTimeOffset StartAt, char Letter, int RoundNumber);

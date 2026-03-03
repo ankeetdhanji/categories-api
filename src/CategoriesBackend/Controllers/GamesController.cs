@@ -119,12 +119,41 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
         var game = await gameManager.GetGameAsync(gameId, ct);
         return Ok(game);
     }
+
+    /// <summary>Updates game settings (host only, lobby phase only).</summary>
+    [HttpPut("{gameId}/settings")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateSettings(string gameId, [FromBody] UpdateSettingsRequest request, CancellationToken ct)
+    {
+        var settings = new GameSettings
+        {
+            IsTimedMode = request.Settings.IsTimedMode,
+            RoundDurationSeconds = request.Settings.RoundDurationSeconds,
+            MaxRounds = request.Settings.MaxRounds,
+            MaxPlayers = request.Settings.MaxPlayers,
+            UniqueAnswerPoints = request.Settings.UniqueAnswerPoints,
+            SharedAnswerPoints = request.Settings.SharedAnswerPoints,
+            BestAnswerBonusPoints = request.Settings.BestAnswerBonusPoints,
+            DisputeVotingWindowSeconds = request.Settings.DisputeVotingWindowSeconds,
+            Categories = request.Settings.Categories,
+        };
+
+        await gameManager.UpdateGameSettingsAsync(gameId, request.PlayerId, settings, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(
+            GameHubEvents.SettingsUpdated,
+            new { settings = GameSettingsDto.From(settings) },
+            ct);
+
+        return Ok();
+    }
 }
 
 // --- Request models ---
 public record CreateGameRequest(string HostPlayerId, string DisplayName);
 public record JoinGameRequest(string PlayerId, string DisplayName);
 public record StartGameRequest(string PlayerId);
+public record UpdateSettingsRequest(string PlayerId, GameSettingsDto Settings);
 public record StartGameResponse(DateTimeOffset StartAt);
 
 // --- Response models ---

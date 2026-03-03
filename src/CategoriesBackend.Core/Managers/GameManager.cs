@@ -102,7 +102,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
 
         var categories = settings.Categories.Count > 0
             ? settings.Categories
-            : DefaultCategories;
+            : GameSettings.DefaultCategories;
 
         return letters.Select((letter, i) => new Round
         {
@@ -112,12 +112,6 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         }).ToList();
     }
 
-    private static readonly List<string> DefaultCategories =
-    [
-        "A boy's name", "A girl's name", "A country", "An animal",
-        "A city", "A food", "A TV show", "Something you find at school"
-    ];
-
     public async Task<Game> GetGameAsync(string gameId, CancellationToken ct = default)
     {
         return await gameRepository.GetByIdAsync(gameId, ct)
@@ -126,6 +120,21 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
 
     public Task<Game?> GetGameByJoinCodeAsync(string joinCode, CancellationToken ct = default)
         => gameRepository.GetByJoinCodeAsync(joinCode, ct);
+
+    public async Task UpdateGameSettingsAsync(string gameId, string requestingPlayerId, GameSettings settings, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct)
+            ?? throw new KeyNotFoundException($"Game '{gameId}' not found.");
+
+        if (game.HostPlayerId != requestingPlayerId)
+            throw new UnauthorizedAccessException("Only the host can change settings.");
+
+        if (game.Status != GameStatus.Lobby)
+            throw new InvalidOperationException("Settings can only be changed in the lobby.");
+
+        game.Settings = settings;
+        await gameRepository.SaveAsync(game, ct);
+    }
 
     private static string GenerateJoinCode()
     {

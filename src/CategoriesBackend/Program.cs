@@ -18,6 +18,7 @@ if (!string.IsNullOrWhiteSpace(gcpProjectId))
 {
     builder.Services.AddSingleton(_ => FirestoreDb.Create(gcpProjectId));
     builder.Services.AddScoped<IGameRepository, GameRepository>();
+    builder.Services.AddScoped<IUserPreferencesRepository, UserPreferencesRepository>();
 }
 
 // Core services
