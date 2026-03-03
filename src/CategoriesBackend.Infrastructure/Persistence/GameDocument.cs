@@ -134,6 +134,7 @@ internal class RoundDocument
     [FirestoreProperty] public Timestamp EndedAt { get; set; }
     [FirestoreProperty] public bool HasStartedAt { get; set; }
     [FirestoreProperty] public bool HasEndedAt { get; set; }
+    [FirestoreProperty] public List<string> DonePlayerIds { get; set; } = [];
     [FirestoreProperty] public Dictionary<string, PlayerAnswersDocument> Answers { get; set; } = [];
     [FirestoreProperty] public Dictionary<string, int> RoundScores { get; set; } = [];
     [FirestoreProperty] public List<DisputeDocument> Disputes { get; set; } = [];
@@ -150,6 +151,7 @@ internal class RoundDocument
         StartedAt = r.StartedAt.HasValue ? Timestamp.FromDateTimeOffset(r.StartedAt.Value) : default,
         HasEndedAt = r.EndedAt.HasValue,
         EndedAt = r.EndedAt.HasValue ? Timestamp.FromDateTimeOffset(r.EndedAt.Value) : default,
+        DonePlayerIds = [.. r.DonePlayerIds],
         Answers = r.Answers.ToDictionary(kv => kv.Key, kv => PlayerAnswersDocument.From(kv.Value)),
         RoundScores = new Dictionary<string, int>(r.RoundScores),
         Disputes = r.Disputes.Select(DisputeDocument.From).ToList(),
@@ -165,6 +167,7 @@ internal class RoundDocument
         Status = Enum.TryParse<RoundStatus>(Status, out var s) ? s : RoundStatus.NotStarted,
         StartedAt = HasStartedAt ? StartedAt.ToDateTimeOffset() : null,
         EndedAt = HasEndedAt ? EndedAt.ToDateTimeOffset() : null,
+        DonePlayerIds = [.. (DonePlayerIds ?? [])],
         Answers = Answers.ToDictionary(kv => kv.Key, kv => kv.Value.ToPlayerAnswers()),
         RoundScores = new Dictionary<string, int>(RoundScores),
         Disputes = Disputes.Select(d => d.ToDispute()).ToList(),

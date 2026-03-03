@@ -11,6 +11,8 @@ public interface IRoundManager
     Task<Round> GetCurrentRoundAsync(string gameId, CancellationToken ct = default);
     Task<RoundReviewResult> GetRoundResultsAsync(string gameId, int roundNumber, CancellationToken ct = default);
     Task LikeAnswerAsync(string gameId, int roundNumber, string playerId, string category, string normalizedAnswer, CancellationToken ct = default);
+    /// <summary>Marks a player as done for the current round. Returns true when all connected players are done.</summary>
+    Task<bool> MarkPlayerDoneAsync(string gameId, string playerId, CancellationToken ct = default);
 }
 
 public record RoundScoreResult(

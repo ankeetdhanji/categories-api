@@ -175,6 +175,28 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         await gameRepository.SaveAsync(game, ct);
     }
 
+    public async Task<bool> MarkPlayerDoneAsync(string gameId, string playerId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+
+        if (game.CurrentRoundIndex < 0 || game.CurrentRoundIndex >= game.Rounds.Count)
+            throw new InvalidOperationException("No active round.");
+
+        var round = game.Rounds[game.CurrentRoundIndex];
+
+        if (round.Status == RoundStatus.Locked)
+            return true; // already ended — treat as all done
+
+        if (!round.DonePlayerIds.Contains(playerId))
+        {
+            round.DonePlayerIds.Add(playerId);
+            await gameRepository.SaveAsync(game, ct);
+        }
+
+        var connectedPlayerIds = game.Players.Where(p => p.IsConnected).Select(p => p.Id).ToHashSet();
+        return connectedPlayerIds.Count > 0 && connectedPlayerIds.All(id => round.DonePlayerIds.Contains(id));
+    }
+
     private async Task<Game> GetGameAsync(string gameId, CancellationToken ct)
         => await gameRepository.GetByIdAsync(gameId, ct)
            ?? throw new InvalidOperationException($"Game '{gameId}' not found.");
