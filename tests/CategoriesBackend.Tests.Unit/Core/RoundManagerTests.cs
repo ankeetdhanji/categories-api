@@ -208,4 +208,119 @@ public class RoundManagerTests
         await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
         Assert.False(game.Rounds[0].Answers.ContainsKey("p2"));
     }
+
+    // --- MarkPlayerDoneAsync ---
+
+    private static Game GameWithRelaxedRound(List<Player>? players = null)
+    {
+        var round = new Round
+        {
+            RoundNumber = 1,
+            Letter = 'B',
+            Categories = ["Animal"],
+            Status = RoundStatus.Answering,
+        };
+
+        return new Game
+        {
+            Id = "game-1",
+            Status = GameStatus.InRound,
+            CurrentRoundIndex = 0,
+            Rounds = [round],
+            Players = players ??
+            [
+                new Player { Id = "p1", DisplayName = "Alice", IsConnected = true },
+                new Player { Id = "p2", DisplayName = "Bob",   IsConnected = true },
+            ],
+            Settings = new GameSettings(),
+        };
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_AddsDonePlayerId_ToRound()
+    {
+        var game = GameWithRelaxedRound();
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        Assert.Contains("p1", game.Rounds[0].DonePlayerIds);
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_ReturnsFalse_WhenNotAllPlayersAreDone()
+    {
+        var game = GameWithRelaxedRound();
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_ReturnsTrue_WhenAllConnectedPlayersDone()
+    {
+        var game = GameWithRelaxedRound();
+        game.Rounds[0].DonePlayerIds.Add("p1"); // p1 already done
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.MarkPlayerDoneAsync("game-1", "p2");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_IgnoresDisconnectedPlayers_WhenCheckingAllDone()
+    {
+        var players = new List<Player>
+        {
+            new() { Id = "p1", DisplayName = "Alice", IsConnected = true },
+            new() { Id = "p2", DisplayName = "Bob",   IsConnected = false }, // disconnected
+        };
+        var game = GameWithRelaxedRound(players);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        // Only p1 marks done — p2 is disconnected and should be ignored
+        var result = await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_IsIdempotent_DoesNotDuplicatePlayerId()
+    {
+        var game = GameWithRelaxedRound();
+        game.Rounds[0].DonePlayerIds.Add("p1"); // already marked
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        Assert.Single(game.Rounds[0].DonePlayerIds, id => id == "p1");
+        await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_WhenRoundAlreadyLocked_ReturnsTrue_WithoutSaving()
+    {
+        var game = GameWithRelaxedRound();
+        game.Rounds[0].Status = RoundStatus.Locked;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        Assert.True(result);
+        await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MarkPlayerDone_CallsSaveAsync_WhenPlayerAddedToDoneList()
+    {
+        var game = GameWithRelaxedRound();
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
 }

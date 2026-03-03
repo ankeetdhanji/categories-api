@@ -79,6 +79,56 @@ public class RoundsController(
         return Ok();
     }
 
+    /// <summary>Player marks themselves as done for the current round. Auto-ends when all connected players are done.</summary>
+    [HttpPost("current/done")]
+    public async Task<IActionResult> MarkDone(string gameId, [FromBody] MarkDoneRequest request, CancellationToken ct)
+    {
+        var game = await gameManager.GetGameAsync(gameId, ct);
+        var currentRound = game.Rounds[game.CurrentRoundIndex];
+
+        var allDone = await roundManager.MarkPlayerDoneAsync(gameId, request.PlayerId, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.PlayerDone, new
+        {
+            playerId = request.PlayerId,
+        }, ct);
+
+        if (!allDone) return Ok(new { allDone = false });
+
+        await roundManager.EndRoundAsync(gameId, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
+        {
+            roundNumber = currentRound.RoundNumber,
+        }, ct);
+
+        var scoreResult = await roundManager.ScoreRoundAsync(gameId, ct);
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+        {
+            roundNumber = scoreResult.RoundNumber,
+            roundScores = scoreResult.RoundScores,
+            leaderboard = scoreResult.Leaderboard,
+        }, ct);
+
+        var disputes = await disputeManager.DetectDisputesAsync(gameId, ct);
+        if (disputes.Count > 0)
+        {
+            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeFlagged, new
+            {
+                roundNumber = currentRound.RoundNumber,
+                disputes = disputes.Select(d => new
+                {
+                    id = d.Id,
+                    category = d.Category,
+                    playerId = d.PlayerId,
+                    rawAnswer = d.RawAnswer,
+                }),
+            }, ct);
+        }
+
+        return Ok(new { allDone = true });
+    }
+
     [HttpGet("{roundNumber}/results")]
     public async Task<IActionResult> GetRoundResults(string gameId, int roundNumber, CancellationToken ct)
     {
@@ -161,6 +211,7 @@ public class RoundsController(
 
 public record SubmitAnswersRequest(string PlayerId, Dictionary<string, string> Answers);
 public record EndRoundRequest(string PlayerId);
+public record MarkDoneRequest(string PlayerId);
 public record DisputeVoteRequest(string PlayerId, bool IsValid);
 public record LikeAnswerRequest(string PlayerId, string Category, string NormalizedAnswer);
 public record AdvanceCategoryRequest(string PlayerId, int CurrentCategoryIndex);

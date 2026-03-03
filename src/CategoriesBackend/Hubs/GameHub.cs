@@ -54,6 +54,7 @@ public static class GameHubEvents
 
     // Round activity
     public const string PlayerSubmitted = "PlayerSubmitted";
+    public const string PlayerDone = "PlayerDone";
 
     // Review phase
     public const string CategoryAdvanced = "CategoryAdvanced";

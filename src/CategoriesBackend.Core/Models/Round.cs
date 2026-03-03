@@ -12,6 +12,8 @@ public class Round
     public Dictionary<string, Dictionary<string, bool>> DisputeVotes { get; set; } = [];
     /// <summary>category → (likingPlayerId → normalizedAnswer they liked). Persisted to Firestore.</summary>
     public Dictionary<string, Dictionary<string, string>> CategoryLikes { get; set; } = [];
+    /// <summary>Players who have clicked "Done" in relaxed mode. Used to auto-end the round.</summary>
+    public List<string> DonePlayerIds { get; set; } = [];
     public RoundStatus Status { get; set; } = RoundStatus.NotStarted;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? EndedAt { get; set; }
