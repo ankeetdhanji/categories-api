@@ -76,10 +76,10 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         // Persist the per-round breakdown on the round itself
         round.RoundScores = roundScores;
 
-        // Add to each player's running total
+        // Add to each player's running total (spectating players sit this round out)
         foreach (var player in game.Players)
         {
-            if (roundScores.TryGetValue(player.Id, out var pts))
+            if (!player.IsSpectating && roundScores.TryGetValue(player.Id, out var pts))
                 player.TotalScore += pts;
         }
 
@@ -193,8 +193,8 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
             await gameRepository.SaveAsync(game, ct);
         }
 
-        var connectedPlayerIds = game.Players.Where(p => p.IsConnected).Select(p => p.Id).ToHashSet();
-        return connectedPlayerIds.Count > 0 && connectedPlayerIds.All(id => round.DonePlayerIds.Contains(id));
+        var activePlayerIds = game.Players.Where(p => p.IsConnected && !p.IsSpectating).Select(p => p.Id).ToHashSet();
+        return activePlayerIds.Count > 0 && activePlayerIds.All(id => round.DonePlayerIds.Contains(id));
     }
 
     private async Task<Game> GetGameAsync(string gameId, CancellationToken ct)

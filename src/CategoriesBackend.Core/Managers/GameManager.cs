@@ -34,16 +34,17 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         var game = await gameRepository.GetByJoinCodeAsync(joinCode, ct)
             ?? throw new InvalidOperationException($"Game with join code '{joinCode}' not found.");
 
-        if (game.Status != GameStatus.Lobby)
-            throw new InvalidOperationException("Game has already started.");
+        if (game.Status == GameStatus.Finished)
+            throw new InvalidOperationException("Game has already finished.");
 
         if (game.Players.Count >= game.Settings.MaxPlayers)
             throw new InvalidOperationException("Game is full.");
 
         if (game.Players.Any(p => p.Id == playerId))
-            return game; // already in lobby
+            return game; // already in the game
 
-        game.Players.Add(new Player { Id = playerId, DisplayName = displayName, IsConnected = true });
+        var isSpectating = game.Status != GameStatus.Lobby;
+        game.Players.Add(new Player { Id = playerId, DisplayName = displayName, IsConnected = true, IsSpectating = isSpectating });
         await gameRepository.SaveAsync(game, ct);
         return game;
     }
@@ -80,6 +81,10 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
 
         game.CurrentRoundIndex = 0;
         game.Status = GameStatus.InRound;
+
+        // Late joiners who were spectating are now active participants
+        foreach (var player in game.Players)
+            player.IsSpectating = false;
 
         var round = game.Rounds[0];
         round.Status = RoundStatus.Answering;

@@ -323,4 +323,40 @@ public class RoundManagerTests
 
         await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task MarkPlayerDone_ExcludesSpectatingPlayers_FromAllDoneCheck()
+    {
+        var players = new List<Player>
+        {
+            new() { Id = "p1", DisplayName = "Alice", IsConnected = true,  IsSpectating = false },
+            new() { Id = "p2", DisplayName = "Bob",   IsConnected = true,  IsSpectating = true  },
+        };
+        var game = GameWithRelaxedRound(players);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        // Only p1 (non-spectating) marks done
+        var result = await _sut.MarkPlayerDoneAsync("game-1", "p1");
+
+        Assert.True(result); // p2 is spectating — should not block round end
+    }
+
+    // --- ScoreRoundAsync: spectating players ---
+
+    [Fact]
+    public async Task ScoreRound_SpectatingPlayer_DoesNotReceiveTotalScoreUpdate()
+    {
+        var game = GameWithActiveRound();
+        game.Players[0].IsSpectating = true; // p1 is spectating
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
+            .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
+
+        await _sut.ScoreRoundAsync("game-1");
+
+        // p1 is spectating — total score should NOT increase
+        Assert.Equal(0, game.Players.Single(p => p.Id == "p1").TotalScore);
+        // p2 is active — total score should increase
+        Assert.Equal(10, game.Players.Single(p => p.Id == "p2").TotalScore); // 5 existing + 5 round
+    }
 }

@@ -175,14 +175,39 @@ public class GameManagerTests
     }
 
     [Fact]
-    public async Task JoinGame_ThrowsInvalidOperation_WhenGameAlreadyStarted()
+    public async Task JoinGame_ThrowsInvalidOperation_WhenGameIsFinished()
+    {
+        var game = LobbyGame();
+        game.Status = GameStatus.Finished;
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.JoinGameAsync("ABC123", "player-99", "Late Player"));
+    }
+
+    [Fact]
+    public async Task JoinGame_WhenGameInRound_AddsPlayerAsSpectating()
     {
         var game = LobbyGame();
         game.Status = GameStatus.InRound;
         _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _sut.JoinGameAsync("ABC123", "player-99", "Late Player"));
+        var result = await _sut.JoinGameAsync("ABC123", "player-99", "Late Player");
+
+        var newPlayer = result.Players.Single(p => p.Id == "player-99");
+        Assert.True(newPlayer.IsSpectating);
+    }
+
+    [Fact]
+    public async Task JoinGame_WhenGameInLobby_AddsPlayerNotSpectating()
+    {
+        var game = LobbyGame();
+        _repo.GetByJoinCodeAsync("ABC123", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.JoinGameAsync("ABC123", "player-new", "New Player");
+
+        var newPlayer = result.Players.Single(p => p.Id == "player-new");
+        Assert.False(newPlayer.IsSpectating);
     }
 
     [Fact]
@@ -252,5 +277,29 @@ public class GameManagerTests
 
         var newPlayer = result.Players.Single(p => p.Id == "player-new");
         Assert.True(newPlayer.IsConnected);
+    }
+
+    // --- BeginRoundAsync spectating clear ---
+
+    [Fact]
+    public async Task BeginRound_ClearsIsSpectating_ForAllPlayers()
+    {
+        var game = new Game
+        {
+            Id = "game-1",
+            Status = GameStatus.Starting,
+            Players =
+            [
+                new Player { Id = "p1", IsConnected = true, IsSpectating = false },
+                new Player { Id = "p2", IsConnected = true, IsSpectating = true },
+            ],
+            Rounds = [new Round { RoundNumber = 1, Letter = 'A', Categories = ["Animal"] }],
+            Settings = new GameSettings { IsTimedMode = false },
+        };
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginRoundAsync("game-1");
+
+        Assert.All(game.Players, p => Assert.False(p.IsSpectating));
     }
 }
