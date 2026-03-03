@@ -7,6 +7,7 @@ public class Player
     public string? AvatarUrl { get; set; }
     public bool IsGuest { get; set; }
     public bool IsConnected { get; set; }
+    public bool IsSpectating { get; set; }
     public int TotalScore { get; set; }
     public int BestAnswerVotes { get; set; }
 }

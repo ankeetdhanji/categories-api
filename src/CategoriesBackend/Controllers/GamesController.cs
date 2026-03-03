@@ -41,7 +41,7 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
                 ct);
         }
 
-        return Ok(new JoinGameResponse(game.Id, game.Players.Select(PlayerDto.From).ToList(), GameSettingsDto.From(game.Settings)));
+        return Ok(new JoinGameResponse(game.Id, (int)game.Status, game.Players.Select(PlayerDto.From).ToList(), GameSettingsDto.From(game.Settings)));
     }
 
     /// <summary>Starts the game (host only). Broadcasts a synced countdown then transitions to InRound.</summary>
@@ -185,7 +185,7 @@ public record FinalizeGameRequest(string PlayerId);
 
 // --- Response models ---
 public record CreateGameResponse(string GameId, string JoinCode, GameSettingsDto Settings);
-public record JoinGameResponse(string GameId, List<PlayerDto> Players, GameSettingsDto Settings);
+public record JoinGameResponse(string GameId, int Status, List<PlayerDto> Players, GameSettingsDto Settings);
 
 public record GameSettingsDto(
     bool IsTimedMode,
@@ -204,7 +204,7 @@ public record GameSettingsDto(
         s.DisputeVotingWindowSeconds, s.Categories);
 }
 
-public record PlayerDto(string Id, string DisplayName, bool IsHost, bool IsGuest, int TotalScore)
+public record PlayerDto(string Id, string DisplayName, bool IsHost, bool IsGuest, bool IsSpectating, int TotalScore)
 {
-    public static PlayerDto From(Player p) => new(p.Id, p.DisplayName, false, p.IsGuest, p.TotalScore);
+    public static PlayerDto From(Player p) => new(p.Id, p.DisplayName, false, p.IsGuest, p.IsSpectating, p.TotalScore);
 }

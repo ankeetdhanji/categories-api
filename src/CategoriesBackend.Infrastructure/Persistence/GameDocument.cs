@@ -57,6 +57,7 @@ internal class PlayerDocument
     [FirestoreProperty] public string? AvatarUrl { get; set; }
     [FirestoreProperty] public bool IsGuest { get; set; }
     [FirestoreProperty] public bool IsConnected { get; set; }
+    [FirestoreProperty] public bool IsSpectating { get; set; }
     [FirestoreProperty] public int TotalScore { get; set; }
     [FirestoreProperty] public int BestAnswerVotes { get; set; }
 
@@ -67,6 +68,7 @@ internal class PlayerDocument
         AvatarUrl = p.AvatarUrl,
         IsGuest = p.IsGuest,
         IsConnected = p.IsConnected,
+        IsSpectating = p.IsSpectating,
         TotalScore = p.TotalScore,
         BestAnswerVotes = p.BestAnswerVotes,
     };
@@ -78,6 +80,7 @@ internal class PlayerDocument
         AvatarUrl = AvatarUrl,
         IsGuest = IsGuest,
         IsConnected = IsConnected,
+        IsSpectating = IsSpectating,
         TotalScore = TotalScore,
         BestAnswerVotes = BestAnswerVotes,
     };
