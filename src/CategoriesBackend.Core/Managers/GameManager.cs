@@ -141,6 +141,37 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         await gameRepository.SaveAsync(game, ct);
     }
 
+    public async Task SetPlayerConnectedAsync(string gameId, string playerId, bool isConnected, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct);
+        if (game == null) return;
+
+        var player = game.Players.FirstOrDefault(p => p.Id == playerId);
+        if (player == null) return;
+
+        player.IsConnected = isConnected;
+        await gameRepository.SaveAsync(game, ct);
+    }
+
+    public async Task<string?> TransferHostAsync(string gameId, string currentHostId, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct);
+        if (game == null) return null;
+
+        // Abort if the current host has since reconnected or host already changed
+        if (game.HostPlayerId != currentHostId) return null;
+        var currentHost = game.Players.FirstOrDefault(p => p.Id == currentHostId);
+        if (currentHost?.IsConnected == true) return null;
+
+        var newHost = game.Players.FirstOrDefault(p => p.IsConnected && !p.IsSpectating && p.Id != currentHostId)
+                   ?? game.Players.FirstOrDefault(p => p.IsConnected && p.Id != currentHostId);
+        if (newHost == null) return null;
+
+        game.HostPlayerId = newHost.Id;
+        await gameRepository.SaveAsync(game, ct);
+        return newHost.Id;
+    }
+
     public async Task<BestAnswerBonusResult> ApplyBestAnswerBonusAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
     {
         var game = await gameRepository.GetByIdAsync(gameId, ct)

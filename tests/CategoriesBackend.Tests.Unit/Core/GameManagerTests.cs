@@ -302,4 +302,118 @@ public class GameManagerTests
 
         Assert.All(game.Players, p => Assert.False(p.IsSpectating));
     }
+
+    // --- SetPlayerConnectedAsync ---
+
+    private static Game ActiveGame() => new()
+    {
+        Id = "game-1",
+        HostPlayerId = "host",
+        Status = GameStatus.InRound,
+        Players =
+        [
+            new Player { Id = "host", DisplayName = "Host", IsConnected = true },
+            new Player { Id = "p2",   DisplayName = "Bob",  IsConnected = true },
+        ],
+        Settings = new GameSettings(),
+    };
+
+    [Fact]
+    public async Task SetPlayerConnected_MarksPlayer_Disconnected()
+    {
+        var game = ActiveGame();
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.SetPlayerConnectedAsync("game-1", "host", false);
+
+        Assert.False(game.Players.Single(p => p.Id == "host").IsConnected);
+    }
+
+    [Fact]
+    public async Task SetPlayerConnected_MarksPlayer_Connected()
+    {
+        var game = ActiveGame();
+        game.Players[0].IsConnected = false;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.SetPlayerConnectedAsync("game-1", "host", true);
+
+        Assert.True(game.Players.Single(p => p.Id == "host").IsConnected);
+    }
+
+    [Fact]
+    public async Task SetPlayerConnected_IsNoOp_WhenGameNotFound()
+    {
+        _repo.GetByIdAsync("missing", Arg.Any<CancellationToken>()).Returns((Game?)null);
+
+        // Should not throw
+        await _sut.SetPlayerConnectedAsync("missing", "host", false);
+
+        await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    // --- TransferHostAsync ---
+
+    [Fact]
+    public async Task TransferHost_AssignsNewHost_ToFirstConnectedNonHostPlayer()
+    {
+        var game = ActiveGame();
+        game.Players[0].IsConnected = false; // host disconnected
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var newHostId = await _sut.TransferHostAsync("game-1", "host");
+
+        Assert.Equal("p2", newHostId);
+        Assert.Equal("p2", game.HostPlayerId);
+    }
+
+    [Fact]
+    public async Task TransferHost_ReturnsNull_WhenHostHasReconnected()
+    {
+        var game = ActiveGame(); // host IsConnected = true
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var newHostId = await _sut.TransferHostAsync("game-1", "host");
+
+        Assert.Null(newHostId);
+        Assert.Equal("host", game.HostPlayerId); // unchanged
+    }
+
+    [Fact]
+    public async Task TransferHost_ReturnsNull_WhenHostAlreadyChanged()
+    {
+        var game = ActiveGame();
+        game.HostPlayerId = "p2"; // already transferred
+        game.Players[0].IsConnected = false;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var newHostId = await _sut.TransferHostAsync("game-1", "host");
+
+        Assert.Null(newHostId);
+    }
+
+    [Fact]
+    public async Task TransferHost_ReturnsNull_WhenNoConnectedPlayersExist()
+    {
+        var game = ActiveGame();
+        game.Players[0].IsConnected = false;
+        game.Players[1].IsConnected = false;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var newHostId = await _sut.TransferHostAsync("game-1", "host");
+
+        Assert.Null(newHostId);
+    }
+
+    [Fact]
+    public async Task TransferHost_CallsSaveAsync_WhenTransferSucceeds()
+    {
+        var game = ActiveGame();
+        game.Players[0].IsConnected = false;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.TransferHostAsync("game-1", "host");
+
+        await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
 }

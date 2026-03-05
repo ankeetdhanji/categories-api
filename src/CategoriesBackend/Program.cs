@@ -2,6 +2,7 @@ using CategoriesBackend.Core.Interfaces;
 using CategoriesBackend.Core.Managers;
 using CategoriesBackend.Hubs;
 using CategoriesBackend.Infrastructure.Repositories;
+using CategoriesBackend.Services;
 using Google.Cloud.Firestore;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -20,6 +21,9 @@ if (!string.IsNullOrWhiteSpace(gcpProjectId))
     builder.Services.AddScoped<IGameRepository, GameRepository>();
     builder.Services.AddScoped<IUserPreferencesRepository, UserPreferencesRepository>();
 }
+
+// Connection tracking (singleton — shared across all hub instances)
+builder.Services.AddSingleton<IPlayerConnectionTracker, InMemoryPlayerConnectionTracker>();
 
 // Core services
 builder.Services.AddScoped<IGameManager, GameManager>();
