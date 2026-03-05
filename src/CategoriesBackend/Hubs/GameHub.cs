@@ -1,3 +1,5 @@
+using CategoriesBackend.Core.Enums;
+using CategoriesBackend.Core.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CategoriesBackend.Hubs;
@@ -6,18 +8,26 @@ namespace CategoriesBackend.Hubs;
 /// SignalR hub for real-time game events.
 /// REST = commands, SignalR = events.
 /// </summary>
-public class GameHub : Hub
+public class GameHub(
+    IPlayerConnectionTracker tracker,
+    IGameManager gameManager,
+    IHubContext<GameHub> hubContext) : Hub
 {
+    private const int HostGraceWindowSeconds = 15;
+
     // --- Client → Server: group management ---
 
-    public async Task JoinGameGroup(string gameId)
+    public async Task JoinGameGroup(string gameId, string playerId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
+        tracker.Register(Context.ConnectionId, gameId, playerId);
+        await gameManager.SetPlayerConnectedAsync(gameId, playerId, isConnected: true);
     }
 
     public async Task LeaveGameGroup(string gameId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, gameId);
+        tracker.Unregister(Context.ConnectionId);
     }
 
     public async Task SendReaction(string gameId, string emoji)
@@ -27,8 +37,37 @@ public class GameHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        // TODO: notify game manager of player disconnect; trigger host-transfer grace window if host
+        var info = tracker.Get(Context.ConnectionId);
+        if (info != null)
+        {
+            var (gameId, playerId) = info.Value;
+            tracker.Unregister(Context.ConnectionId);
+
+            await gameManager.SetPlayerConnectedAsync(gameId, playerId, isConnected: false);
+
+            await hubContext.Clients.Group(gameId).SendAsync(GameHubEvents.PlayerLeft, new { playerId });
+
+            var game = await gameManager.GetGameAsync(gameId);
+            if (game.HostPlayerId == playerId && game.Status != GameStatus.Finished)
+            {
+                _ = ScheduleHostTransferAsync(gameId, playerId);
+            }
+        }
+
         await base.OnDisconnectedAsync(exception);
+    }
+
+    private async Task ScheduleHostTransferAsync(string gameId, string disconnectedHostId)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(HostGraceWindowSeconds));
+
+        var newHostId = await gameManager.TransferHostAsync(gameId, disconnectedHostId);
+        if (newHostId != null)
+        {
+            await hubContext.Clients.Group(gameId).SendAsync(
+                GameHubEvents.HostChanged,
+                new { hostPlayerId = newHostId });
+        }
     }
 }
 
@@ -40,6 +79,7 @@ public static class GameHubEvents
     public const string PlayerJoined = "PlayerJoined";
     public const string PlayerLeft = "PlayerLeft";
     public const string SettingsUpdated = "SettingsUpdated";
+    public const string HostChanged = "HostChanged";
 
     // Game lifecycle
     public const string GameCountdown = "GameCountdown";

@@ -11,6 +11,13 @@ public interface IGameManager
     Task<Game> GetGameAsync(string gameId, CancellationToken ct = default);
     Task<Game?> GetGameByJoinCodeAsync(string joinCode, CancellationToken ct = default);
     Task UpdateGameSettingsAsync(string gameId, string requestingPlayerId, GameSettings settings, CancellationToken ct = default);
+    /// <summary>Marks a player as connected or disconnected. No-op if player or game not found.</summary>
+    Task SetPlayerConnectedAsync(string gameId, string playerId, bool isConnected, CancellationToken ct = default);
+    /// <summary>
+    /// Transfers host role from <paramref name="currentHostId"/> to the first other connected player.
+    /// Returns the new host's playerId, or null if host has reconnected or no connected player exists.
+    /// </summary>
+    Task<string?> TransferHostAsync(string gameId, string currentHostId, CancellationToken ct = default);
     /// <summary>
     /// Tallies best-answer likes across all rounds, awards bonus to the top vote-getter(s)
     /// (splitting evenly on a tie), marks the game as Finished, and returns the final standings.
