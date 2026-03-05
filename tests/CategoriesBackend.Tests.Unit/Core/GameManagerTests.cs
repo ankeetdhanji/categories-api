@@ -416,4 +416,101 @@ public class GameManagerTests
 
         await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
     }
+
+    // --- BeginNextRoundAsync ---
+
+    private static Game TwoRoundGame(int currentRoundIndex = 0) => new()
+    {
+        Id = "game-1",
+        Status = GameStatus.RoundResults,
+        CurrentRoundIndex = currentRoundIndex,
+        Players = [new Player { Id = "p1", IsConnected = true }],
+        Rounds =
+        [
+            new Round { RoundNumber = 1, Letter = 'A', Categories = ["Animal"], Status = RoundStatus.Complete },
+            new Round { RoundNumber = 2, Letter = 'B', Categories = ["Animal"] },
+        ],
+        Settings = new GameSettings { IsTimedMode = false, RoundDurationSeconds = 60 },
+    };
+
+    [Fact]
+    public async Task BeginNextRound_AdvancesCurrentRoundIndex()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 0);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.Equal(1, game.CurrentRoundIndex);
+    }
+
+    [Fact]
+    public async Task BeginNextRound_SetsGameStatus_ToInRound()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 0);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.Equal(GameStatus.InRound, game.Status);
+    }
+
+    [Fact]
+    public async Task BeginNextRound_SetsRoundStatus_ToAnswering()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 0);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.Equal(RoundStatus.Answering, game.Rounds[1].Status);
+    }
+
+    [Fact]
+    public async Task BeginNextRound_ReturnsNull_WhenAllRoundsPlayed()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 1); // already on last round
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task BeginNextRound_ClearsIsSpectating_ForAllPlayers()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 0);
+        game.Players[0].IsSpectating = true;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.All(game.Players, p => Assert.False(p.IsSpectating));
+    }
+
+    [Fact]
+    public async Task BeginNextRound_SetsEndedAt_InTimedMode()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 0);
+        game.Settings.IsTimedMode = true;
+        game.Settings.RoundDurationSeconds = 60;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.NotNull(game.Rounds[1].EndedAt);
+    }
+
+    [Fact]
+    public async Task BeginNextRound_DoesNotSetEndedAt_InRelaxedMode()
+    {
+        var game = TwoRoundGame(currentRoundIndex: 0);
+        game.Settings.IsTimedMode = false;
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.BeginNextRoundAsync("game-1");
+
+        Assert.Null(game.Rounds[1].EndedAt);
+    }
 }
