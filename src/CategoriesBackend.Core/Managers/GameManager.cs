@@ -141,6 +141,30 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         await gameRepository.SaveAsync(game, ct);
     }
 
+    public async Task<Round?> BeginNextRoundAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        var nextIndex = game.CurrentRoundIndex + 1;
+
+        if (nextIndex >= game.Rounds.Count) return null; // all rounds played
+
+        game.CurrentRoundIndex = nextIndex;
+        game.Status = GameStatus.InRound;
+
+        // Late joiners who were spectating are now active participants
+        foreach (var player in game.Players)
+            player.IsSpectating = false;
+
+        var round = game.Rounds[nextIndex];
+        round.Status = RoundStatus.Answering;
+        round.StartedAt = DateTimeOffset.UtcNow;
+        if (game.Settings.IsTimedMode)
+            round.EndedAt = round.StartedAt.Value.AddSeconds(game.Settings.RoundDurationSeconds);
+
+        await gameRepository.SaveAsync(game, ct);
+        return round;
+    }
+
     public async Task SetPlayerConnectedAsync(string gameId, string playerId, bool isConnected, CancellationToken ct = default)
     {
         var game = await gameRepository.GetByIdAsync(gameId, ct);

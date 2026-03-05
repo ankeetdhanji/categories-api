@@ -8,7 +8,7 @@ namespace CategoriesBackend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class GamesController(IGameManager gameManager, IRoundManager roundManager, IDisputeManager disputeManager, IHubContext<GameHub> hub) : ControllerBase
+public class GamesController(IGameManager gameManager, ISchedulingService schedulingService, IHubContext<GameHub> hub) : ControllerBase
 {
     /// <summary>Creates a new game and returns the join code.</summary>
     [HttpPost]
@@ -57,56 +57,9 @@ public class GamesController(IGameManager gameManager, IRoundManager roundManage
             new { startAt, letter = result.Letter.ToString(), roundNumber = result.RoundNumber },
             ct);
 
-        // Fire-and-forget: begin round after countdown, then lock it when the timer expires
+        // Schedule begin-round after countdown delay
         var delay = startAt - DateTimeOffset.UtcNow;
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(delay > TimeSpan.Zero ? delay : TimeSpan.Zero);
-            var round = await gameManager.BeginRoundAsync(gameId);
-            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundStarted, new
-            {
-                roundNumber = round.RoundNumber,
-                letter = round.Letter.ToString(),
-                categories = round.Categories,
-                startedAt = round.StartedAt,
-                endsAt = round.EndedAt,
-            });
-
-            if (round.EndedAt.HasValue)
-            {
-                var roundDelay = round.EndedAt.Value - DateTimeOffset.UtcNow;
-                await Task.Delay(roundDelay > TimeSpan.Zero ? roundDelay : TimeSpan.Zero);
-                await roundManager.EndRoundAsync(gameId);
-                await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
-                {
-                    roundNumber = round.RoundNumber,
-                });
-
-                var result = await roundManager.ScoreRoundAsync(gameId);
-                await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
-                {
-                    roundNumber = result.RoundNumber,
-                    roundScores = result.RoundScores,
-                    leaderboard = result.Leaderboard,
-                });
-
-                var disputes = await disputeManager.DetectDisputesAsync(gameId);
-                if (disputes.Count > 0)
-                {
-                    await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeFlagged, new
-                    {
-                        roundNumber = round.RoundNumber,
-                        disputes = disputes.Select(d => new
-                        {
-                            id = d.Id,
-                            category = d.Category,
-                            playerId = d.PlayerId,
-                            rawAnswer = d.RawAnswer,
-                        }),
-                    });
-                }
-            }
-        });
+        await schedulingService.ScheduleBeginRoundAsync(gameId, delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct);
 
         return Ok(new StartGameResponse(startAt));
     }

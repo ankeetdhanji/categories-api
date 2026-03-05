@@ -10,10 +10,22 @@ public class CloudTasksSchedulingService(CloudTasksClient tasksClient, string pr
 {
     private QueueName QueueName => new(projectId, locationId, queueId);
 
+    public async SystemTask ScheduleBeginRoundAsync(string gameId, TimeSpan delay, CancellationToken ct = default)
+    {
+        var taskName = $"begin-round-{gameId}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        await CreateHttpTaskAsync(taskName, $"/internal/games/{gameId}/begin-round", delay, ct);
+    }
+
     public async SystemTask ScheduleRoundEndAsync(string gameId, TimeSpan delay, CancellationToken ct = default)
     {
         var taskName = $"end-round-{gameId}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
         await CreateHttpTaskAsync(taskName, $"/internal/games/{gameId}/end-round", delay, ct);
+    }
+
+    public async SystemTask ScheduleNextRoundAsync(string gameId, TimeSpan delay, CancellationToken ct = default)
+    {
+        var taskName = $"next-round-{gameId}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        await CreateHttpTaskAsync(taskName, $"/internal/games/{gameId}/begin-next-round", delay, ct);
     }
 
     public async SystemTask ScheduleDisputeCloseAsync(string gameId, string disputeId, TimeSpan delay, CancellationToken ct = default)

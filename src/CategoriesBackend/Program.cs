@@ -25,6 +25,9 @@ if (!string.IsNullOrWhiteSpace(gcpProjectId))
 // Connection tracking (singleton — shared across all hub instances)
 builder.Services.AddSingleton<IPlayerConnectionTracker, InMemoryPlayerConnectionTracker>();
 
+// Scheduling: Cloud Tasks in production, in-process background tasks for local dev
+builder.Services.AddSingleton<ISchedulingService, NoOpSchedulingService>();
+
 // Core services
 builder.Services.AddScoped<IGameManager, GameManager>();
 builder.Services.AddScoped<IRoundManager, RoundManager>();
