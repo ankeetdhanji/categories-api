@@ -35,6 +35,13 @@ public class GameHub(
         await Clients.OthersInGroup(gameId).SendAsync(GameHubEvents.EmojiReaction, new { emoji });
     }
 
+    public async Task NotifyAnswerPresence(string gameId, string playerId, string category, bool hasAnswer)
+    {
+        await Clients.OthersInGroup(gameId).SendAsync(
+            GameHubEvents.PlayerAnswerUpdated,
+            new { playerId, category, hasAnswer });
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var info = tracker.Get(Context.ConnectionId);
@@ -103,4 +110,7 @@ public static class GameHubEvents
 
     // Reactions
     public const string EmojiReaction = "EmojiReaction";
+
+    // Answer presence (for avatar badges)
+    public const string PlayerAnswerUpdated = "PlayerAnswerUpdated";
 }
