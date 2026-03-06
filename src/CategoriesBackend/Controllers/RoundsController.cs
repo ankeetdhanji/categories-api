@@ -11,8 +11,34 @@ public class RoundsController(
     IGameManager gameManager,
     IRoundManager roundManager,
     IDisputeManager disputeManager,
+    ISchedulingService schedulingService,
     IHubContext<GameHub> hub) : ControllerBase
 {
+    /// <summary>Host-only: begins the countdown for the next round and broadcasts GameCountdown to all clients.</summary>
+    [HttpPost("next")]
+    public async Task<IActionResult> StartNextRound(string gameId, [FromBody] StartNextRoundRequest request, CancellationToken ct)
+    {
+        var game = await gameManager.GetGameAsync(gameId, ct);
+        if (game.HostPlayerId != request.PlayerId)
+            return Forbid();
+
+        var result = await gameManager.PrepareNextRoundAsync(gameId, ct);
+        if (result == null)
+            return BadRequest("All rounds have been played.");
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.GameCountdown, new
+        {
+            startAt = result.StartAt,
+            letter = result.Letter.ToString(),
+            roundNumber = result.RoundNumber,
+        }, ct);
+
+        var delay = result.StartAt - DateTimeOffset.UtcNow;
+        await schedulingService.ScheduleNextRoundAsync(gameId, delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct);
+
+        return Ok();
+    }
+
     [HttpGet("current")]
     public async Task<IActionResult> GetCurrentRound(string gameId, CancellationToken ct)
     {
@@ -209,6 +235,7 @@ public class RoundsController(
     }
 }
 
+public record StartNextRoundRequest(string PlayerId);
 public record SubmitAnswersRequest(string PlayerId, Dictionary<string, string> Answers);
 public record EndRoundRequest(string PlayerId);
 public record MarkDoneRequest(string PlayerId);

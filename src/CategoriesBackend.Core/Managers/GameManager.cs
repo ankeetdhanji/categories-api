@@ -70,6 +70,20 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         return new StartGameResult(startAt, firstRound.Letter, firstRound.RoundNumber);
     }
 
+    public async Task<StartGameResult?> PrepareNextRoundAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        var nextIndex = game.CurrentRoundIndex + 1;
+        if (nextIndex >= game.Rounds.Count) return null;
+
+        var startAt = DateTimeOffset.UtcNow.AddSeconds(5);
+        game.Status = GameStatus.Starting;
+        await gameRepository.SaveAsync(game, ct);
+
+        var nextRound = game.Rounds[nextIndex];
+        return new StartGameResult(startAt, nextRound.Letter, nextRound.RoundNumber);
+    }
+
     public async Task<Round> BeginRoundAsync(string gameId, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);

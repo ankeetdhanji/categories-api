@@ -7,6 +7,7 @@ public interface IGameManager
     Task<Game> CreateGameAsync(string hostPlayerId, string hostDisplayName, CancellationToken ct = default);
     Task<Game> JoinGameAsync(string joinCode, string playerId, string displayName, CancellationToken ct = default);
     Task<StartGameResult> StartGameAsync(string gameId, string requestingPlayerId, CancellationToken ct = default);
+    Task<StartGameResult?> PrepareNextRoundAsync(string gameId, CancellationToken ct = default);
     Task<Round> BeginRoundAsync(string gameId, CancellationToken ct = default);
     /// <summary>Advances to the next round. Returns null if the game is over (all rounds played).</summary>
     Task<Round?> BeginNextRoundAsync(string gameId, CancellationToken ct = default);

@@ -51,6 +51,6 @@ jobs:
             --region ${{ env.REGION }} \
             --platform managed \
             --service-account categories-backend@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
-            --set-env-vars "Gcp__ProjectId=${{ env.PROJECT_ID }},AllowedOrigins__0=https://categories-game-app.web.app" \
+            --set-env-vars "Gcp__ProjectId=${{ env.PROJECT_ID }},AllowedOrigins__0=https://categories-game-app.web.app,AllowedOrigins__1=https://categories.ankeet.app" \
             --allow-unauthenticated \
             --quiet
