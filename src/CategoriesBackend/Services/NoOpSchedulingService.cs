@@ -41,7 +41,10 @@ public class NoOpSchedulingService(
         await Task.Delay(delay);
         using var scope = scopeFactory.CreateScope();
         try { await callback(gameId, scope); }
-        catch { /* swallow — background task */ }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[NoOpSchedulingService] Background callback failed for game {gameId}: {ex}");
+        }
     }
 
     private async Task BeginRoundCallbackAsync(string gameId, IServiceScope scope)
