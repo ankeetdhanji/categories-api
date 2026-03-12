@@ -34,6 +34,12 @@ public class CloudTasksSchedulingService(CloudTasksClient tasksClient, string pr
         await CreateHttpTaskAsync(taskName, $"/internal/games/{gameId}/disputes/{disputeId}/close", delay, ct);
     }
 
+    public async SystemTask ScheduleAdvanceCategoryAsync(string gameId, int currentCategoryIndex, TimeSpan delay, CancellationToken ct = default)
+    {
+        var taskName = $"advance-category-{gameId}-{currentCategoryIndex}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+        await CreateHttpTaskAsync(taskName, $"/internal/games/{gameId}/advance-category/{currentCategoryIndex}", delay, ct);
+    }
+
     public SystemTask CancelScheduledTaskAsync(string taskName, CancellationToken ct = default)
     {
         // Cloud Tasks does not support cancellation by name directly without the full task path.

@@ -11,6 +11,9 @@ namespace CategoriesBackend.Hubs;
 public class GameHub(
     IPlayerConnectionTracker tracker,
     IGameManager gameManager,
+    IRoundManager roundManager,
+    IDisputeManager disputeManager,
+    ISchedulingService schedulingService,
     IHubContext<GameHub> hubContext) : Hub
 {
     private const int HostGraceWindowSeconds = 15;
@@ -55,6 +58,14 @@ public class GameHub(
             await hubContext.Clients.Group(gameId).SendAsync(GameHubEvents.PlayerLeft, new { playerId });
 
             var game = await gameManager.GetGameAsync(gameId);
+
+            // T1-A: In relaxed mode, if this player's disconnect means all remaining players are done,
+            // trigger the end-round cascade so the round isn't permanently blocked.
+            if (game.Status == GameStatus.InRound && !game.Settings.IsTimedMode)
+            {
+                _ = TryTriggerRelaxedRoundEndAsync(gameId, playerId);
+            }
+
             if (game.HostPlayerId == playerId && game.Status != GameStatus.Finished)
             {
                 _ = ScheduleHostTransferAsync(gameId, playerId);
@@ -62,6 +73,30 @@ public class GameHub(
         }
 
         await base.OnDisconnectedAsync(exception);
+    }
+
+    private async Task TryTriggerRelaxedRoundEndAsync(string gameId, string disconnectedPlayerId)
+    {
+        try
+        {
+            var allDone = await roundManager.MarkPlayerDoneAsync(gameId, disconnectedPlayerId);
+            if (!allDone) return;
+
+            var game = await gameManager.GetGameAsync(gameId);
+            var currentRound = game.Rounds[game.CurrentRoundIndex];
+
+            await RoundEndCascade.ExecuteAsync(
+                gameId,
+                currentRound.RoundNumber,
+                roundManager,
+                disputeManager,
+                schedulingService,
+                hubContext);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[GameHub] TryTriggerRelaxedRoundEndAsync failed for game {gameId}: {ex.Message}");
+        }
     }
 
     private async Task ScheduleHostTransferAsync(string gameId, string disconnectedHostId)

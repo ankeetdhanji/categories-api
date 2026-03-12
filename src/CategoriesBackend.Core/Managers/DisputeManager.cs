@@ -129,6 +129,13 @@ public class DisputeManager(IGameRepository gameRepository) : IDisputeManager
     public Task OpenDisputeVotingAsync(string gameId, string category, string answer, CancellationToken ct = default)
         => Task.CompletedTask;
 
-    public Task CloseDisputeVotingAsync(string gameId, string disputeId, CancellationToken ct = default)
-        => Task.CompletedTask;
+    public async Task CloseDisputeVotingAsync(string gameId, string disputeId, CancellationToken ct = default)
+    {
+        // Extract category from disputeId format "{category}:{normalizedAnswer}"
+        var colonIdx = disputeId.IndexOf(':');
+        if (colonIdx < 0) return;
+        var category = disputeId[..colonIdx];
+
+        await ResolveAllPendingForCategoryAsync(gameId, category, ct);
+    }
 }
