@@ -33,6 +33,9 @@ public class NoOpSchedulingService(
     public Task ScheduleDisputeCloseAsync(string gameId, string disputeId, TimeSpan delay, CancellationToken ct = default)
         => Task.CompletedTask; // Not implemented for local dev
 
+    public Task ScheduleAdvanceCategoryAsync(string gameId, int currentCategoryIndex, TimeSpan delay, CancellationToken ct = default)
+        => Task.CompletedTask; // Not implemented for local dev
+
     public Task CancelScheduledTaskAsync(string taskName, CancellationToken ct = default)
         => Task.CompletedTask;
 

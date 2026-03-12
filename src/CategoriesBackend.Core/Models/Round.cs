@@ -14,6 +14,8 @@ public class Round
     public Dictionary<string, Dictionary<string, string>> CategoryLikes { get; set; } = [];
     /// <summary>Players who have clicked "Done" in relaxed mode. Used to auto-end the round.</summary>
     public List<string> DonePlayerIds { get; set; } = [];
+    /// <summary>Tracks which category is currently being reviewed. Used to prevent double-advance race conditions.</summary>
+    public int CurrentCategoryIndex { get; set; } = -1;
     public RoundStatus Status { get; set; } = RoundStatus.NotStarted;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? EndedAt { get; set; }

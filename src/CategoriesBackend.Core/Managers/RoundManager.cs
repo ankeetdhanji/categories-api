@@ -197,6 +197,13 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         return activePlayerIds.Count > 0 && activePlayerIds.All(id => round.DonePlayerIds.Contains(id));
     }
 
+    public async Task UpdateCurrentCategoryIndexAsync(string gameId, int index, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        game.Rounds[game.CurrentRoundIndex].CurrentCategoryIndex = index;
+        await gameRepository.SaveAsync(game, ct);
+    }
+
     private async Task<Game> GetGameAsync(string gameId, CancellationToken ct)
         => await gameRepository.GetByIdAsync(gameId, ct)
            ?? throw new InvalidOperationException($"Game '{gameId}' not found.");

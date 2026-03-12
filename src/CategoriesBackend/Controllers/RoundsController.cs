@@ -67,40 +67,9 @@ public class RoundsController(
         if (game.HostPlayerId != request.PlayerId)
             return Forbid();
 
-        // Use in-memory round data (already loaded) to avoid an extra Firestore
-        // read between EndRoundAsync and the RoundEnded broadcast.
         var currentRound = game.Rounds[game.CurrentRoundIndex];
 
-        await roundManager.EndRoundAsync(gameId, ct);
-
-        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
-        {
-            roundNumber = currentRound.RoundNumber,
-        }, ct);
-
-        var scoreResult = await roundManager.ScoreRoundAsync(gameId, ct);
-        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
-        {
-            roundNumber = scoreResult.RoundNumber,
-            roundScores = scoreResult.RoundScores,
-            leaderboard = scoreResult.Leaderboard,
-        }, ct);
-
-        var disputes = await disputeManager.DetectDisputesAsync(gameId, ct);
-        if (disputes.Count > 0)
-        {
-            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeFlagged, new
-            {
-                roundNumber = currentRound.RoundNumber,
-                disputes = disputes.Select(d => new
-                {
-                    id = d.Id,
-                    category = d.Category,
-                    playerId = d.PlayerId,
-                    rawAnswer = d.RawAnswer,
-                }),
-            }, ct);
-        }
+        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, ct);
 
         return Ok();
     }
@@ -121,36 +90,7 @@ public class RoundsController(
 
         if (!allDone) return Ok(new { allDone = false });
 
-        await roundManager.EndRoundAsync(gameId, ct);
-
-        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
-        {
-            roundNumber = currentRound.RoundNumber,
-        }, ct);
-
-        var scoreResult = await roundManager.ScoreRoundAsync(gameId, ct);
-        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
-        {
-            roundNumber = scoreResult.RoundNumber,
-            roundScores = scoreResult.RoundScores,
-            leaderboard = scoreResult.Leaderboard,
-        }, ct);
-
-        var disputes = await disputeManager.DetectDisputesAsync(gameId, ct);
-        if (disputes.Count > 0)
-        {
-            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.DisputeFlagged, new
-            {
-                roundNumber = currentRound.RoundNumber,
-                disputes = disputes.Select(d => new
-                {
-                    id = d.Id,
-                    category = d.Category,
-                    playerId = d.PlayerId,
-                    rawAnswer = d.RawAnswer,
-                }),
-            }, ct);
-        }
+        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, ct);
 
         return Ok(new { allDone = true });
     }
@@ -198,7 +138,8 @@ public class RoundsController(
         return Ok();
     }
 
-    /// <summary>Host-only: advance to next category in review phase. Auto-resolves pending disputes in the current category.</summary>
+    /// <summary>Host-only: advance to next category in review phase. Idempotent: only advances if
+    /// request.CurrentCategoryIndex matches the persisted round index.</summary>
     [HttpPost("current/review/advance")]
     public async Task<IActionResult> AdvanceCategory(string gameId, [FromBody] AdvanceCategoryRequest request, CancellationToken ct)
     {
@@ -207,6 +148,13 @@ public class RoundsController(
             return Forbid();
 
         var round = game.Rounds[game.CurrentRoundIndex];
+
+        // Idempotency: if already advanced past this index, return current state
+        if (round.CurrentCategoryIndex != request.CurrentCategoryIndex)
+        {
+            var alreadyLast = round.CurrentCategoryIndex >= round.Categories.Count;
+            return Ok(new { categoryIndex = round.CurrentCategoryIndex, isLastCategory = alreadyLast });
+        }
 
         // Resolve all pending disputes in the current category before advancing
         if (request.CurrentCategoryIndex >= 0 && request.CurrentCategoryIndex < round.Categories.Count)
@@ -217,6 +165,9 @@ public class RoundsController(
 
         var nextIndex = request.CurrentCategoryIndex + 1;
         var isLastCategory = nextIndex >= round.Categories.Count;
+
+        // Persist the new index atomically to prevent double-advance races
+        await roundManager.UpdateCurrentCategoryIndexAsync(gameId, nextIndex, ct);
 
         await hub.Clients.Group(gameId).SendAsync(GameHubEvents.CategoryAdvanced, new
         {
