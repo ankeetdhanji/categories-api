@@ -6,6 +6,12 @@ namespace CategoriesBackend.Core.Managers;
 public class ScoringEngine : IScoringEngine
 {
     public Dictionary<string, int> ComputeRoundScores(Round round, GameSettings settings)
+        => ComputeRoundScores(round, settings, null);
+
+    public Dictionary<string, int> ComputeRoundScores(
+        Round round,
+        GameSettings settings,
+        IReadOnlySet<string>? invalidDisputeIds)
     {
         var scores = round.Answers.Keys.ToDictionary(playerId => playerId, _ => 0);
 
@@ -20,7 +26,9 @@ public class ScoringEngine : IScoringEngine
                         : string.Empty;
                     return (playerId: kv.Key, norm);
                 })
-                .Where(x => !string.IsNullOrWhiteSpace(x.norm))
+                .Where(x => !string.IsNullOrWhiteSpace(x.norm)
+                    && (invalidDisputeIds == null
+                        || !invalidDisputeIds.Contains($"{category}:{x.norm}")))
                 .ToDictionary(x => x.playerId, x => x.norm);
 
             if (answersByPlayer.Count == 0)

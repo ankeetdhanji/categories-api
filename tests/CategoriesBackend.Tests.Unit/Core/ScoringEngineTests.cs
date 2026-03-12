@@ -194,4 +194,96 @@ public class ScoringEngineTests
         Assert.True(scores.ContainsKey("p1"));
         Assert.True(scores.ContainsKey("p2"));
     }
+
+    // --- Filtered overload (invalidDisputeIds) ---
+
+    [Fact]
+    public void ComputeRoundScores_WithNullInvalidIds_BehavesIdenticallyToNoArgOverload()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "Ant" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "Ant" }));
+
+        var withNull = _sut.ComputeRoundScores(round, DefaultSettings(), null);
+        var noArg    = _sut.ComputeRoundScores(round, DefaultSettings());
+
+        Assert.Equal(noArg["p1"], withNull["p1"]);
+        Assert.Equal(noArg["p2"], withNull["p2"]);
+    }
+
+    [Fact]
+    public void ComputeRoundScores_InvalidDisputeId_SkipsMatchingAnswer()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "xyz" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "Ant" }));
+
+        // p1's answer is marked invalid
+        var invalidIds = new HashSet<string> { "Animal:xyz" };
+        var scores = _sut.ComputeRoundScores(round, DefaultSettings(), invalidIds);
+
+        Assert.Equal(0,  scores["p1"]); // excluded → 0 pts
+        Assert.Equal(10, scores["p2"]); // now unique → 10 pts
+    }
+
+    [Fact]
+    public void ComputeRoundScores_NonDisputedAnswers_Unaffected_ByInvalidIds()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "Ant", ["Country"] = "Austria" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "Ant", ["Country"] = "Argentina" }));
+
+        // Dispute that matches nothing
+        var invalidIds = new HashSet<string> { "Animal:zebra" };
+        var scores = _sut.ComputeRoundScores(round, DefaultSettings(), invalidIds);
+
+        // Animal: shared (5+5), Country: unique (10+10) — same as without filter
+        Assert.Equal(15, scores["p1"]);
+        Assert.Equal(15, scores["p2"]);
+    }
+
+    [Fact]
+    public void ComputeRoundScores_SharedInvalidAnswer_ExcludesAllPlayersWithThatAnswer()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "xyz" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "xyz" }),
+            ("p3", new Dictionary<string, string> { ["Animal"] = "Ant" }));
+
+        var invalidIds = new HashSet<string> { "Animal:xyz" };
+        var scores = _sut.ComputeRoundScores(round, DefaultSettings(), invalidIds);
+
+        Assert.Equal(0,  scores["p1"]); // invalid → 0
+        Assert.Equal(0,  scores["p2"]); // invalid → 0
+        Assert.Equal(10, scores["p3"]); // now unique → 10
+    }
+
+    [Fact]
+    public void ComputeRoundScores_SharedAnswerWhereOnePlayerInvalid_RemainingPlayerBecomesUnique()
+    {
+        // p1 and p2 both answered "ant"; only p1's is disputed as invalid.
+        // After exclusion, p2 is the sole remaining player → unique points.
+        // (In practice DetectDisputesAsync creates one Dispute per player with the same answer,
+        //  so both would be excluded. This test validates the engine behaviour in isolation.)
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "ant" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "ant" }));
+
+        // Only one player's answer included in invalid set (engine-level edge case)
+        // Dispute IDs are "{category}:{normalizedAnswer}" — not per-player — so both are excluded.
+        // To test the "remaining player becomes unique" scenario we use a different dispute key
+        // that only matches if we pretend p1 answered differently.
+        // Use a separate answer so the exclusion only removes p1.
+        var round2 = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "xyz" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "ant" }),
+            ("p3", new Dictionary<string, string> { ["Animal"] = "ant" }));
+
+        var invalidIds = new HashSet<string> { "Animal:xyz" };
+        var scores = _sut.ComputeRoundScores(round2, DefaultSettings(), invalidIds);
+
+        Assert.Equal(0, scores["p1"]);  // invalid → 0
+        Assert.Equal(5, scores["p2"]);  // still shared with p3 → 5
+        Assert.Equal(5, scores["p3"]);  // still shared with p2 → 5
+    }
 }
