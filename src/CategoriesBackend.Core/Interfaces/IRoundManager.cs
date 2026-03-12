@@ -15,6 +15,12 @@ public interface IRoundManager
     Task<bool> MarkPlayerDoneAsync(string gameId, string playerId, CancellationToken ct = default);
     /// <summary>Persists the current review category index. Used to enforce idempotent category advances.</summary>
     Task UpdateCurrentCategoryIndexAsync(string gameId, int index, CancellationToken ct = default);
+    /// <summary>
+    /// Re-scores the current round excluding Invalid-disputed answers, applies the delta to player
+    /// totals and round scores, and saves. Returns a corrected leaderboard. No-ops (no save) when
+    /// there are no invalid disputes.
+    /// </summary>
+    Task<RoundScoreResult> ApplyDisputeCorrectionsAsync(string gameId, CancellationToken ct = default);
 }
 
 public record RoundScoreResult(

@@ -204,6 +204,51 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         await gameRepository.SaveAsync(game, ct);
     }
 
+    public async Task<RoundScoreResult> ApplyDisputeCorrectionsAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+        var round = game.Rounds[game.CurrentRoundIndex];
+
+        var invalidDisputeIds = round.Disputes
+            .Where(d => d.Status == DisputeStatus.Invalid)
+            .Select(d => d.Id)
+            .ToHashSet();
+
+        // Fast path: no corrections needed
+        if (invalidDisputeIds.Count == 0)
+        {
+            var existingLeaderboard = game.Players
+                .OrderByDescending(p => p.TotalScore)
+                .Select(p => new LeaderboardEntry(
+                    p.Id, p.DisplayName, p.TotalScore,
+                    round.RoundScores.GetValueOrDefault(p.Id, 0)))
+                .ToList();
+            return new RoundScoreResult(round.RoundNumber, round.RoundScores, existingLeaderboard);
+        }
+
+        var correctedScores = scoringEngine.ComputeRoundScores(round, game.Settings, invalidDisputeIds);
+
+        foreach (var player in game.Players)
+        {
+            if (player.IsSpectating) continue;
+            var oldScore = round.RoundScores.GetValueOrDefault(player.Id, 0);
+            var newScore = correctedScores.GetValueOrDefault(player.Id, 0);
+            player.TotalScore += newScore - oldScore;
+        }
+
+        round.RoundScores = correctedScores;
+        await gameRepository.SaveAsync(game, ct);
+
+        var leaderboard = game.Players
+            .OrderByDescending(p => p.TotalScore)
+            .Select(p => new LeaderboardEntry(
+                p.Id, p.DisplayName, p.TotalScore,
+                correctedScores.GetValueOrDefault(p.Id, 0)))
+            .ToList();
+
+        return new RoundScoreResult(round.RoundNumber, correctedScores, leaderboard);
+    }
+
     private async Task<Game> GetGameAsync(string gameId, CancellationToken ct)
         => await gameRepository.GetByIdAsync(gameId, ct)
            ?? throw new InvalidOperationException($"Game '{gameId}' not found.");

@@ -176,6 +176,15 @@ public class RoundsController(
 
         if (isLastCategory)
         {
+            var corrected = await roundManager.ApplyDisputeCorrectionsAsync(gameId, ct);
+
+            await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+            {
+                roundNumber = corrected.RoundNumber,
+                roundScores = corrected.RoundScores,
+                leaderboard = corrected.Leaderboard,
+            }, ct);
+
             await hub.Clients.Group(gameId).SendAsync(GameHubEvents.ReviewComplete, new
             {
                 roundNumber = round.RoundNumber,

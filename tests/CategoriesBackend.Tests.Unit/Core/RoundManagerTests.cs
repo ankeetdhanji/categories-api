@@ -341,6 +341,181 @@ public class RoundManagerTests
         Assert.True(result); // p2 is spectating — should not block round end
     }
 
+    // --- ApplyDisputeCorrectionsAsync ---
+
+    private static Game GameWithScoredRoundAndDisputes(
+        Dictionary<string, int> roundScores,
+        List<Dispute> disputes,
+        List<Player>? players = null)
+    {
+        var round = new Round
+        {
+            RoundNumber = 1,
+            Letter = 'A',
+            Categories = ["Animal"],
+            Status = RoundStatus.Locked,
+            RoundScores = roundScores,
+            Disputes = disputes,
+        };
+
+        return new Game
+        {
+            Id = "game-1",
+            Status = GameStatus.InRound,
+            CurrentRoundIndex = 0,
+            Rounds = [round],
+            Players = players ??
+            [
+                new Player { Id = "p1", DisplayName = "Alice", TotalScore = 10 },
+                new Player { Id = "p2", DisplayName = "Bob",   TotalScore = 5  },
+            ],
+            Settings = new GameSettings(),
+        };
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_NoInvalidDisputes_DoesNotCallSaveAsync()
+    {
+        var disputes = new List<Dispute>
+        {
+            new() { Id = "Animal:xyz", Status = DisputeStatus.Valid },
+        };
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 },
+            disputes);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_NoInvalidDisputes_ReturnsExistingScores()
+    {
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 },
+            []);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        Assert.Equal(10, result.RoundScores["p1"]);
+        Assert.Equal(5,  result.RoundScores["p2"]);
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_InvalidDispute_AdjustsPlayerTotalScore()
+    {
+        var disputes = new List<Dispute>
+        {
+            new() { Id = "Animal:xyz", Status = DisputeStatus.Invalid },
+        };
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 },
+            disputes);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        // After correction p1 scores 0 (invalid answer), p2 stays at 5
+        _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(new Dictionary<string, int> { ["p1"] = 0, ["p2"] = 5 });
+
+        await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        // p1: was 10 total, round was 10, corrected to 0 → total drops by 10 → 0
+        Assert.Equal(0, game.Players.Single(p => p.Id == "p1").TotalScore);
+        // p2 unchanged
+        Assert.Equal(5, game.Players.Single(p => p.Id == "p2").TotalScore);
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_InvalidDispute_UpdatesRoundScores()
+    {
+        var disputes = new List<Dispute>
+        {
+            new() { Id = "Animal:xyz", Status = DisputeStatus.Invalid },
+        };
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 },
+            disputes);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(new Dictionary<string, int> { ["p1"] = 0, ["p2"] = 5 });
+
+        await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        Assert.Equal(0, game.Rounds[0].RoundScores["p1"]);
+        Assert.Equal(5, game.Rounds[0].RoundScores["p2"]);
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_InvalidDispute_CallsSaveAsyncOnce()
+    {
+        var disputes = new List<Dispute>
+        {
+            new() { Id = "Animal:xyz", Status = DisputeStatus.Invalid },
+        };
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10 },
+            disputes);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(new Dictionary<string, int> { ["p1"] = 0 });
+
+        await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_ReturnsLeaderboard_SortedByTotalScoreDescending()
+    {
+        var disputes = new List<Dispute>
+        {
+            new() { Id = "Animal:xyz", Status = DisputeStatus.Invalid },
+        };
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 },
+            disputes);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        // p1 corrected to 0, p2 stays 5
+        _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(new Dictionary<string, int> { ["p1"] = 0, ["p2"] = 5 });
+
+        var result = await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        // p2 total 5 > p1 total 0
+        Assert.Equal("p2", result.Leaderboard[0].PlayerId);
+        Assert.Equal("p1", result.Leaderboard[1].PlayerId);
+    }
+
+    [Fact]
+    public async Task ApplyDisputeCorrections_SpectatingPlayer_TotalScoreNotAdjusted()
+    {
+        var players = new List<Player>
+        {
+            new() { Id = "p1", DisplayName = "Alice", TotalScore = 10, IsSpectating = true },
+            new() { Id = "p2", DisplayName = "Bob",   TotalScore = 5,  IsSpectating = false },
+        };
+        var disputes = new List<Dispute>
+        {
+            new() { Id = "Animal:xyz", Status = DisputeStatus.Invalid },
+        };
+        var game = GameWithScoredRoundAndDisputes(
+            new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 },
+            disputes,
+            players);
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<IReadOnlySet<string>>())
+            .Returns(new Dictionary<string, int> { ["p1"] = 0, ["p2"] = 5 });
+
+        await _sut.ApplyDisputeCorrectionsAsync("game-1");
+
+        // p1 is spectating — TotalScore should NOT change
+        Assert.Equal(10, game.Players.Single(p => p.Id == "p1").TotalScore);
+        // p2 is active — unchanged (0 delta)
+        Assert.Equal(5, game.Players.Single(p => p.Id == "p2").TotalScore);
+    }
+
     // --- ScoreRoundAsync: spectating players ---
 
     [Fact]
