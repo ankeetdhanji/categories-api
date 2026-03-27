@@ -16,7 +16,7 @@ public class GameHub(
     ISchedulingService schedulingService,
     IHubContext<GameHub> hubContext) : Hub
 {
-    private const int HostGraceWindowSeconds = 15;
+    private const int HostGraceWindowSeconds = 90;
 
     // --- Client → Server: group management ---
 
