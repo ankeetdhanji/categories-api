@@ -27,6 +27,8 @@ internal static class RoundEndCascade
             roundNumber,
         }, ct);
 
+        await Task.Delay(TimeSpan.FromSeconds(2), ct); // Grace period for clients to auto-submit
+
         var scoreResult = await roundManager.ScoreRoundAsync(gameId, ct);
         await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
         {
