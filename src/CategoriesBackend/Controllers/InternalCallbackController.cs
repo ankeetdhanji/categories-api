@@ -49,7 +49,7 @@ public class InternalCallbackController(
         var game = await gameManager.GetGameAsync(gameId, ct);
         var currentRound = game.Rounds[game.CurrentRoundIndex];
 
-        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, ct);
+        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, gameManager, ct);
 
         return Ok();
     }
