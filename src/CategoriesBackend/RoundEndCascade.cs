@@ -29,9 +29,9 @@ internal static class RoundEndCascade
             roundNumber,
         }, ct);
 
-        // Wait up to 8 seconds for all active players to submit; poll every 500 ms.
+        // Wait up to 30 seconds for all active players to submit; poll every 500 ms.
         // Falls through and scores regardless after the deadline.
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(8);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(500, CancellationToken.None);
@@ -52,6 +52,8 @@ internal static class RoundEndCascade
             roundScores = scoreResult.RoundScores,
             leaderboard = scoreResult.Leaderboard,
         }, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.GameStateSync, ct);
 
         var disputes = await disputeManager.DetectDisputesAsync(gameId, ct);
         if (disputes.Count > 0)

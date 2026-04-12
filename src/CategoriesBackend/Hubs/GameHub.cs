@@ -149,4 +149,7 @@ public static class GameHubEvents
 
     // Answer presence (for avatar badges)
     public const string PlayerAnswerUpdated = "PlayerAnswerUpdated";
+
+    // State synchronization
+    public const string GameStateSync = "GameStateSync";
 }
