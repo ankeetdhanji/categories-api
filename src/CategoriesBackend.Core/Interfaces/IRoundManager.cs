@@ -6,7 +6,8 @@ public interface IRoundManager
 {
     Task StartRoundAsync(string gameId, CancellationToken ct = default);
     Task SubmitAnswersAsync(string gameId, string playerId, Dictionary<string, string> answers, CancellationToken ct = default);
-    Task EndRoundAsync(string gameId, CancellationToken ct = default);
+    /// <summary>Ends the current round. Returns true if the round was actually ended, false if it was already ended (no-op).</summary>
+    Task<bool> EndRoundAsync(string gameId, CancellationToken ct = default);
     Task<RoundScoreResult> ScoreRoundAsync(string gameId, CancellationToken ct = default);
     Task<Round> GetCurrentRoundAsync(string gameId, CancellationToken ct = default);
     Task<RoundReviewResult> GetRoundResultsAsync(string gameId, int roundNumber, CancellationToken ct = default);

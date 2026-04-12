@@ -42,15 +42,16 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         await gameRepository.SaveAsync(game, ct);
     }
 
-    public async Task EndRoundAsync(string gameId, CancellationToken ct = default)
+    public async Task<bool> EndRoundAsync(string gameId, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);
         var round = game.Rounds[game.CurrentRoundIndex];
 
-        if (round.Status == RoundStatus.Locked) return; // idempotent
+        if (round.Status == RoundStatus.Locked) return false; // already ended — idempotent
 
         round.Status = RoundStatus.Locked;
         await gameRepository.SaveAsync(game, ct);
+        return true;
     }
 
     public async Task<RoundScoreResult> ScoreRoundAsync(string gameId, CancellationToken ct = default)

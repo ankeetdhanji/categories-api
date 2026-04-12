@@ -20,7 +20,8 @@ internal static class RoundEndCascade
         IHubContext<GameHub> hub,
         CancellationToken ct = default)
     {
-        await roundManager.EndRoundAsync(gameId, ct);
+        var actuallyEnded = await roundManager.EndRoundAsync(gameId, ct);
+        if (!actuallyEnded) return; // already ended by a concurrent path — don't re-broadcast stale events
 
         await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new
         {
