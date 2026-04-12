@@ -82,7 +82,9 @@ public class NoOpSchedulingService(
         var game = await gameManager.GetGameAsync(gameId);
         var currentRound = game.Rounds[game.CurrentRoundIndex];
 
-        await roundManager.EndRoundAsync(gameId);
+        var actuallyEnded = await roundManager.EndRoundAsync(gameId);
+        if (!actuallyEnded) return; // already ended — don't re-broadcast stale events
+
         await hub.Clients.Group(gameId).SendAsync(GameHubEvents.RoundEnded, new { roundNumber = currentRound.RoundNumber });
 
         var scoreResult = await roundManager.ScoreRoundAsync(gameId);
