@@ -49,47 +49,47 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
 
     public async Task<RoundScoreResult> ScoreRoundAsync(string gameId, CancellationToken ct = default)
     {
-        var game = await GetGameAsync(gameId, ct);
-        var round = game.Rounds[game.CurrentRoundIndex];
-
-        // Idempotency guard: if round was already scored (e.g. timed mode fired and host also
-        // force-ended), return the existing result without re-scoring or double-updating totals.
-        if (round.RoundScores.Count > 0)
+        // Use a Firestore transaction so the read and write are atomic. If a concurrent
+        // UpdateAnswersAsync transaction commits between our read and write, Firestore detects
+        // the conflict and retries this lambda with a fresh snapshot — ensuring we never
+        // overwrite an answer that arrived during the 2-second grace period.
+        return await gameRepository.RunInTransactionAsync(gameId, game =>
         {
-            var existingLeaderboard = game.Players
+            var round = game.Rounds[game.CurrentRoundIndex];
+
+            // Idempotency guard: if round was already scored (e.g. timed mode fired and host
+            // also force-ended), return the existing result without re-scoring or double-updating totals.
+            if (round.RoundScores.Count > 0)
+            {
+                var existingLeaderboard = game.Players
+                    .OrderByDescending(p => p.TotalScore)
+                    .Select(p => new LeaderboardEntry(
+                        p.Id, p.DisplayName, p.TotalScore,
+                        round.RoundScores.TryGetValue(p.Id, out var r) ? r : 0))
+                    .ToList();
+                return (new RoundScoreResult(round.RoundNumber, round.RoundScores, existingLeaderboard), null);
+            }
+
+            var roundScores = scoringEngine.ComputeRoundScores(round, game.Settings);
+            round.RoundScores = roundScores;
+
+            foreach (var player in game.Players)
+            {
+                if (!player.IsSpectating && roundScores.TryGetValue(player.Id, out var pts))
+                    player.TotalScore += pts;
+            }
+
+            game.Status = GameStatus.RoundResults;
+
+            var leaderboard = game.Players
                 .OrderByDescending(p => p.TotalScore)
                 .Select(p => new LeaderboardEntry(
                     p.Id, p.DisplayName, p.TotalScore,
-                    round.RoundScores.TryGetValue(p.Id, out var r) ? r : 0))
+                    roundScores.TryGetValue(p.Id, out var r) ? r : 0))
                 .ToList();
-            return new RoundScoreResult(round.RoundNumber, round.RoundScores, existingLeaderboard);
-        }
 
-        var roundScores = scoringEngine.ComputeRoundScores(round, game.Settings);
-
-        // Persist the per-round breakdown on the round itself
-        round.RoundScores = roundScores;
-
-        // Add to each player's running total (spectating players sit this round out)
-        foreach (var player in game.Players)
-        {
-            if (!player.IsSpectating && roundScores.TryGetValue(player.Id, out var pts))
-                player.TotalScore += pts;
-        }
-
-        game.Status = GameStatus.RoundResults;
-        await gameRepository.SaveAsync(game, ct);
-
-        var leaderboard = game.Players
-            .OrderByDescending(p => p.TotalScore)
-            .Select(p => new LeaderboardEntry(
-                p.Id,
-                p.DisplayName,
-                p.TotalScore,
-                roundScores.TryGetValue(p.Id, out var r) ? r : 0))
-            .ToList();
-
-        return new RoundScoreResult(round.RoundNumber, roundScores, leaderboard);
+            return (new RoundScoreResult(round.RoundNumber, roundScores, leaderboard), game);
+        }, ct);
     }
 
     public async Task<Round> GetCurrentRoundAsync(string gameId, CancellationToken ct = default)

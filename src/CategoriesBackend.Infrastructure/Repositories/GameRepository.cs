@@ -65,6 +65,31 @@ public class GameRepository(FirestoreDb db) : IGameRepository
         return written;
     }
 
+    public async Task<T> RunInTransactionAsync<T>(
+        string gameId,
+        Func<Game, (T result, Game? updatedGame)> operation,
+        CancellationToken ct = default)
+    {
+        var docRef = Games.Document(gameId);
+        T result = default!;
+
+        await db.RunTransactionAsync(async transaction =>
+        {
+            var snapshot = await transaction.GetSnapshotAsync(docRef, ct);
+            if (!snapshot.Exists)
+                throw new InvalidOperationException($"Game '{gameId}' not found.");
+
+            var game = snapshot.ConvertTo<GameDocument>().ToGame();
+            var (r, updatedGame) = operation(game);
+            result = r;
+
+            if (updatedGame != null)
+                transaction.Set(docRef, GameDocument.FromGame(updatedGame));
+        }, cancellationToken: ct);
+
+        return result;
+    }
+
     public async Task DeleteAsync(string gameId, CancellationToken ct = default)
     {
         await Games.Document(gameId).DeleteAsync(cancellationToken: ct);

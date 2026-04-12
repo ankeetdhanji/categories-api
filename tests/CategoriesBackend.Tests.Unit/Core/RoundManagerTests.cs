@@ -19,6 +19,25 @@ public class RoundManagerTests
 
     // --- Helpers ---
 
+    /// <summary>
+    /// Sets up the mock repository so that RunInTransactionAsync invokes the operation
+    /// synchronously on <paramref name="game"/> — mirroring the real Firestore transaction
+    /// without needing a live database.
+    /// </summary>
+    private void SetupScoringTransaction(Game game)
+    {
+        _repo.RunInTransactionAsync(
+                game.Id,
+                Arg.Any<Func<Game, (RoundScoreResult, Game?)>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var op = callInfo.Arg<Func<Game, (RoundScoreResult, Game?)>>();
+                var (result, _) = op(game);
+                return Task.FromResult(result);
+            });
+    }
+
     private static Game GameWithActiveRound(Dictionary<string, int>? existingRoundScores = null)
     {
         var round = new Round
@@ -51,7 +70,7 @@ public class RoundManagerTests
     public async Task ScoreRound_StoresRoundScores_OnRound()
     {
         var game = GameWithActiveRound();
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
 
@@ -65,7 +84,7 @@ public class RoundManagerTests
     public async Task ScoreRound_AddsRoundPointsToPlayerTotals()
     {
         var game = GameWithActiveRound();
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
 
@@ -81,7 +100,7 @@ public class RoundManagerTests
     public async Task ScoreRound_ReturnsLeaderboard_SortedByTotalScoreDescending()
     {
         var game = GameWithActiveRound();
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 0, ["p2"] = 10 });
 
@@ -97,7 +116,7 @@ public class RoundManagerTests
     public async Task ScoreRound_LeaderboardEntry_ContainsCorrectTotalAndRoundScores()
     {
         var game = GameWithActiveRound();
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
 
@@ -116,7 +135,7 @@ public class RoundManagerTests
     public async Task ScoreRound_SetsGameStatus_ToRoundResults()
     {
         var game = GameWithActiveRound();
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10 });
 
@@ -126,16 +145,19 @@ public class RoundManagerTests
     }
 
     [Fact]
-    public async Task ScoreRound_CallsSaveAsync_OnRepository()
+    public async Task ScoreRound_UsesTransaction_ToAtomicallyReadAndWrite()
     {
         var game = GameWithActiveRound();
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10 });
 
         await _sut.ScoreRoundAsync("game-1");
 
-        await _repo.Received(1).SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).RunInTransactionAsync(
+            "game-1",
+            Arg.Any<Func<Game, (RoundScoreResult, Game?)>>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -145,7 +167,7 @@ public class RoundManagerTests
         var game = GameWithActiveRound(existingRoundScores: new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
         game.Players.Single(p => p.Id == "p1").TotalScore = 10;
         game.Players.Single(p => p.Id == "p2").TotalScore = 10;
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
 
         var result = await _sut.ScoreRoundAsync("game-1");
 
@@ -155,14 +177,17 @@ public class RoundManagerTests
     }
 
     [Fact]
-    public async Task ScoreRound_WhenAlreadyScored_DoesNotCallSaveAsync()
+    public async Task ScoreRound_WhenAlreadyScored_DoesNotModifyGameState()
     {
         var game = GameWithActiveRound(existingRoundScores: new Dictionary<string, int> { ["p1"] = 10 });
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        game.Players.Single(p => p.Id == "p1").TotalScore = 10;
+        SetupScoringTransaction(game);
 
         await _sut.ScoreRoundAsync("game-1");
 
-        await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
+        // Scores and totals should be unchanged — no re-scoring
+        Assert.Equal(10, game.Rounds[0].RoundScores["p1"]);
+        Assert.Equal(10, game.Players.Single(p => p.Id == "p1").TotalScore);
     }
 
     // --- SubmitAnswersAsync ---
@@ -530,7 +555,7 @@ public class RoundManagerTests
     {
         var game = GameWithActiveRound();
         game.Players[0].IsSpectating = true; // p1 is spectating
-        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        SetupScoringTransaction(game);
         _scoringEngine.ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
 
