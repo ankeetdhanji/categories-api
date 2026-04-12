@@ -33,6 +33,8 @@ public class InternalCallbackController(
             endsAt = round.EndedAt,
         }, ct);
 
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.GameStateSync, ct);
+
         if (round.EndedAt.HasValue)
         {
             var delay = round.EndedAt.Value - DateTimeOffset.UtcNow;
@@ -69,6 +71,8 @@ public class InternalCallbackController(
             startedAt = round.StartedAt,
             endsAt = round.EndedAt,
         }, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.GameStateSync, ct);
 
         if (round.EndedAt.HasValue)
         {
