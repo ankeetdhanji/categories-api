@@ -5,7 +5,7 @@ namespace CategoriesBackend.Core.Interfaces;
 public interface IRoundManager
 {
     Task StartRoundAsync(string gameId, CancellationToken ct = default);
-    Task SubmitAnswersAsync(string gameId, string playerId, Dictionary<string, string> answers, CancellationToken ct = default);
+    Task<bool> SubmitAnswersAsync(string gameId, string playerId, Dictionary<string, string> answers, CancellationToken ct = default);
     /// <summary>Ends the current round. Returns true if the round was actually ended, false if it was already ended (no-op).</summary>
     Task<bool> EndRoundAsync(string gameId, CancellationToken ct = default);
     Task<RoundScoreResult> ScoreRoundAsync(string gameId, CancellationToken ct = default);

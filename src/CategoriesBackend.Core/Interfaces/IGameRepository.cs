@@ -7,5 +7,6 @@ public interface IGameRepository
     Task<Game?> GetByIdAsync(string gameId, CancellationToken ct = default);
     Task<Game?> GetByJoinCodeAsync(string joinCode, CancellationToken ct = default);
     Task SaveAsync(Game game, CancellationToken ct = default);
+    Task<bool> UpdateAnswersAsync(string gameId, int roundIndex, string playerId, PlayerAnswers answers, CancellationToken ct = default);
     Task DeleteAsync(string gameId, CancellationToken ct = default);
 }

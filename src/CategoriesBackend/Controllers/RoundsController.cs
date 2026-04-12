@@ -49,12 +49,14 @@ public class RoundsController(
     [HttpPost("current/answers")]
     public async Task<IActionResult> SubmitAnswers(string gameId, [FromBody] SubmitAnswersRequest request, CancellationToken ct)
     {
-        await roundManager.SubmitAnswersAsync(gameId, request.PlayerId, request.Answers, ct);
-
-        await hub.Clients.Group(gameId).SendAsync(
-            GameHubEvents.PlayerSubmitted,
-            new { playerId = request.PlayerId },
-            ct);
+        var accepted = await roundManager.SubmitAnswersAsync(gameId, request.PlayerId, request.Answers, ct);
+        if (accepted)
+        {
+            await hub.Clients.Group(gameId).SendAsync(
+                GameHubEvents.PlayerSubmitted,
+                new { playerId = request.PlayerId },
+                ct);
+        }
 
         return Ok();
     }
