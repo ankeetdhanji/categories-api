@@ -102,11 +102,6 @@ public class NoOpSchedulingService(
                 disputes = disputes.Select(d => new { id = d.Id, category = d.Category, playerId = d.PlayerId, rawAnswer = d.RawAnswer }),
             });
         }
-
-        // Schedule next round if rounds remain
-        var freshGame = await gameManager.GetGameAsync(gameId);
-        if (freshGame.CurrentRoundIndex + 1 < freshGame.Rounds.Count)
-            await schedulingService.ScheduleNextRoundAsync(gameId, TimeSpan.FromSeconds(3));
     }
 
     private async Task BeginNextRoundCallbackAsync(string gameId, IServiceScope scope)

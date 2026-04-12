@@ -51,11 +51,6 @@ public class InternalCallbackController(
 
         await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, ct);
 
-        // Schedule next round if rounds remain (3-second buffer for clients to read leaderboard)
-        var freshGame = await gameManager.GetGameAsync(gameId, ct);
-        if (freshGame.CurrentRoundIndex + 1 < freshGame.Rounds.Count)
-            await schedulingService.ScheduleNextRoundAsync(gameId, TimeSpan.FromSeconds(3), ct);
-
         return Ok();
     }
 
