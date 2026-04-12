@@ -12,26 +12,18 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         await Task.CompletedTask;
     }
 
-    public async Task SubmitAnswersAsync(string gameId, string playerId, Dictionary<string, string> answers, CancellationToken ct = default)
+    public async Task<bool> SubmitAnswersAsync(string gameId, string playerId, Dictionary<string, string> answers, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);
 
         if (game.CurrentRoundIndex < 0 || game.CurrentRoundIndex >= game.Rounds.Count)
             throw new InvalidOperationException("No active round.");
 
-        var round = game.Rounds[game.CurrentRoundIndex];
-
-        // Accept late submissions from clients that hadn't submitted before the host
-        // force-ended the round (they receive RoundEnded and auto-submit).
-        // If the round is already scored, skip silently — the answers are too late.
-        if (round.RoundScores.Count > 0)
-            return;
-
         var normalized = answers.ToDictionary(
             kv => kv.Key,
             kv => kv.Value.Trim().ToLowerInvariant());
 
-        round.Answers[playerId] = new PlayerAnswers
+        var playerAnswers = new PlayerAnswers
         {
             PlayerId = playerId,
             Answers = new Dictionary<string, string>(answers),
@@ -39,7 +31,8 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
             IsSubmitted = true,
         };
 
-        await gameRepository.SaveAsync(game, ct);
+        return await gameRepository.UpdateAnswersAsync(
+            gameId, game.CurrentRoundIndex, playerId, playerAnswers, ct);
     }
 
     public async Task<bool> EndRoundAsync(string gameId, CancellationToken ct = default)

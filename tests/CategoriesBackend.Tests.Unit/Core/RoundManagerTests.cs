@@ -186,14 +186,19 @@ public class RoundManagerTests
     {
         var game = GameWithAnsweringRound();
         _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        PlayerAnswers? captured = null;
+        _repo.UpdateAnswersAsync("game-1", 0, "p1",
+            Arg.Do<PlayerAnswers>(pa => captured = pa),
+            Arg.Any<CancellationToken>()).Returns(true);
 
-        await _sut.SubmitAnswersAsync("game-1", "p1",
+        var accepted = await _sut.SubmitAnswersAsync("game-1", "p1",
             new Dictionary<string, string> { ["Animal"] = "  ANT  " });
 
-        var stored = game.Rounds[0].Answers["p1"];
-        Assert.Equal("  ANT  ", stored.Answers["Animal"]);
-        Assert.Equal("ant", stored.NormalizedAnswers["Animal"]);
-        Assert.True(stored.IsSubmitted);
+        Assert.True(accepted);
+        Assert.NotNull(captured);
+        Assert.Equal("  ANT  ", captured.Answers["Animal"]);
+        Assert.Equal("ant", captured.NormalizedAnswers["Animal"]);
+        Assert.True(captured.IsSubmitted);
     }
 
     [Fact]
@@ -201,12 +206,14 @@ public class RoundManagerTests
     {
         var game = GameWithAnsweringRound(alreadyScored: true);
         _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+        _repo.UpdateAnswersAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(),
+            Arg.Any<PlayerAnswers>(), Arg.Any<CancellationToken>()).Returns(false);
 
-        await _sut.SubmitAnswersAsync("game-1", "p2",
+        var accepted = await _sut.SubmitAnswersAsync("game-1", "p2",
             new Dictionary<string, string> { ["Animal"] = "Ant" });
 
+        Assert.False(accepted);
         await _repo.DidNotReceive().SaveAsync(Arg.Any<Game>(), Arg.Any<CancellationToken>());
-        Assert.False(game.Rounds[0].Answers.ContainsKey("p2"));
     }
 
     // --- MarkPlayerDoneAsync ---
