@@ -91,7 +91,8 @@ public class GameHub(
                 roundManager,
                 disputeManager,
                 schedulingService,
-                hubContext);
+                hubContext,
+                gameManager);
         }
         catch (Exception ex)
         {

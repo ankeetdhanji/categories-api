@@ -71,7 +71,7 @@ public class RoundsController(
 
         var currentRound = game.Rounds[game.CurrentRoundIndex];
 
-        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, ct);
+        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, gameManager, ct);
 
         return Ok();
     }
@@ -92,7 +92,7 @@ public class RoundsController(
 
         if (!allDone) return Ok(new { allDone = false });
 
-        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, ct);
+        await RoundEndCascade.ExecuteAsync(gameId, currentRound.RoundNumber, roundManager, disputeManager, schedulingService, hub, gameManager, ct);
 
         return Ok(new { allDone = true });
     }

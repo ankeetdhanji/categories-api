@@ -18,6 +18,7 @@ internal static class RoundEndCascade
         IDisputeManager disputeManager,
         ISchedulingService schedulingService,
         IHubContext<GameHub> hub,
+        IGameManager gameManager,
         CancellationToken ct = default)
     {
         var actuallyEnded = await roundManager.EndRoundAsync(gameId, ct);
@@ -28,7 +29,21 @@ internal static class RoundEndCascade
             roundNumber,
         }, ct);
 
-        await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None); // Grace period for clients to auto-submit; must not be cancelled by host disconnect
+        // Wait up to 8 seconds for all active players to submit; poll every 500 ms.
+        // Falls through and scores regardless after the deadline.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(8);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(500, CancellationToken.None);
+            var game = await gameManager.GetGameAsync(gameId, CancellationToken.None);
+            var round = game.Rounds[game.CurrentRoundIndex];
+            var activePlayers = game.Players
+                .Where(p => p.IsConnected && !p.IsSpectating)
+                .Select(p => p.Id)
+                .ToHashSet();
+            if (activePlayers.Count == 0 || activePlayers.All(id => round.Answers.ContainsKey(id)))
+                break;
+        }
 
         var scoreResult = await roundManager.ScoreRoundAsync(gameId, ct);
         await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
