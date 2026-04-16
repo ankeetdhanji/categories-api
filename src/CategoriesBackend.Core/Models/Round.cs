@@ -19,6 +19,17 @@ public class Round
     public RoundStatus Status { get; set; } = RoundStatus.NotStarted;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? EndedAt { get; set; }
+    /// <summary>Host-rejected answer keys: "{category}:{normalizedAnswer}".</summary>
+    public HashSet<string> RejectedAnswerIds { get; set; } = [];
+    public List<MergeGroup> MergeGroups { get; set; } = [];
+}
+
+public class MergeGroup
+{
+    public string Id { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string CanonicalAnswer { get; set; } = string.Empty;
+    public List<string> MergedNormalizedAnswers { get; set; } = [];
 }
 
 public class Dispute

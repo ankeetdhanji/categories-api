@@ -51,6 +51,11 @@ public record AnswerEntry(
     bool IsShared,
     bool IsUnique,
     bool IsDisputed,
-    string? DisputeId);
+    string? DisputeId,
+    bool IsRejected = false,
+    bool IsMerged = false,
+    string? MergeGroupId = null,
+    string? MergeCanonicalAnswer = null,
+    List<string>? MergeVariants = null);
 
 public record PlayerRef(string Id, string DisplayName);

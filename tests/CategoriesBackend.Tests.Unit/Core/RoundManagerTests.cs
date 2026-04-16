@@ -566,4 +566,90 @@ public class RoundManagerTests
         // p2 is active — total score should increase
         Assert.Equal(10, game.Players.Single(p => p.Id == "p2").TotalScore); // 5 existing + 5 round
     }
+
+    // --- GetRoundResultsAsync: moderation markers ---
+
+    private static Game GameWithAnswersForReview()
+    {
+        var round = new Round
+        {
+            RoundNumber = 1,
+            Letter = 'A',
+            Categories = ["Animal"],
+            Status = RoundStatus.Locked,
+            Answers =
+            {
+                ["p1"] = new PlayerAnswers
+                {
+                    PlayerId = "p1",
+                    Answers = { ["Animal"] = "Ant" },
+                    NormalizedAnswers = { ["Animal"] = "ant" },
+                    IsSubmitted = true,
+                },
+                ["p2"] = new PlayerAnswers
+                {
+                    PlayerId = "p2",
+                    Answers = { ["Animal"] = "Alligator" },
+                    NormalizedAnswers = { ["Animal"] = "alligator" },
+                    IsSubmitted = true,
+                },
+            },
+        };
+
+        return new Game
+        {
+            Id = "game-1",
+            HostPlayerId = "p1",
+            Status = GameStatus.RoundResults,
+            CurrentRoundIndex = 0,
+            Rounds = [round],
+            Players =
+            [
+                new Player { Id = "p1", DisplayName = "Alice" },
+                new Player { Id = "p2", DisplayName = "Bob" },
+            ],
+            Settings = new GameSettings(),
+        };
+    }
+
+    [Fact]
+    public async Task GetRoundResults_RejectedEntry_HasIsRejectedTrue()
+    {
+        var game = GameWithAnswersForReview();
+        game.Rounds[0].RejectedAnswerIds.Add("Animal:ant");
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.GetRoundResultsAsync("game-1", 1);
+
+        var category = result.Categories.Single(c => c.Name == "Animal");
+        var antEntry = category.Entries.Single(e => e.NormalizedAnswer == "ant");
+        Assert.True(antEntry.IsRejected);
+        var alligatorEntry = category.Entries.Single(e => e.NormalizedAnswer == "alligator");
+        Assert.False(alligatorEntry.IsRejected);
+    }
+
+    [Fact]
+    public async Task GetRoundResults_MergedEntries_CollapsedIntoSingleEntry()
+    {
+        var game = GameWithAnswersForReview();
+        game.Rounds[0].MergeGroups.Add(new MergeGroup
+        {
+            Id = "mg1",
+            Category = "Animal",
+            CanonicalAnswer = "Ant/Alligator",
+            MergedNormalizedAnswers = ["ant", "alligator"],
+        });
+        _repo.GetByIdAsync("game-1", Arg.Any<CancellationToken>()).Returns(game);
+
+        var result = await _sut.GetRoundResultsAsync("game-1", 1);
+
+        var category = result.Categories.Single(c => c.Name == "Animal");
+        // Both answers collapsed into one merged entry
+        Assert.Single(category.Entries);
+        var merged = category.Entries[0];
+        Assert.True(merged.IsMerged);
+        Assert.Equal("mg1", merged.MergeGroupId);
+        Assert.Equal("Ant/Alligator", merged.RawAnswer);
+        Assert.Equal(2, merged.Players.Count);
+    }
 }
