@@ -33,6 +33,7 @@ builder.Services.AddScoped<IGameManager, GameManager>();
 builder.Services.AddScoped<IRoundManager, RoundManager>();
 builder.Services.AddScoped<IScoringEngine, ScoringEngine>();
 builder.Services.AddScoped<IDisputeManager, DisputeManager>();
+builder.Services.AddScoped<IHostModerationManager, HostModerationManager>();
 
 builder.Services.AddCors(options =>
 {

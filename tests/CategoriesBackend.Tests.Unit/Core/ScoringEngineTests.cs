@@ -204,7 +204,7 @@ public class ScoringEngineTests
             ("p1", new Dictionary<string, string> { ["Animal"] = "Ant" }),
             ("p2", new Dictionary<string, string> { ["Animal"] = "Ant" }));
 
-        var withNull = _sut.ComputeRoundScores(round, DefaultSettings(), null);
+        var withNull = _sut.ComputeRoundScores(round, DefaultSettings(), (IReadOnlySet<string>?)null);
         var noArg    = _sut.ComputeRoundScores(round, DefaultSettings());
 
         Assert.Equal(noArg["p1"], withNull["p1"]);
@@ -285,5 +285,70 @@ public class ScoringEngineTests
         Assert.Equal(0, scores["p1"]);  // invalid → 0
         Assert.Equal(5, scores["p2"]);  // still shared with p3 → 5
         Assert.Equal(5, scores["p3"]);  // still shared with p2 → 5
+    }
+
+    // --- Moderation: reject ---
+
+    [Fact]
+    public void ComputeRoundScores_RejectedAnswer_AwardsZero()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "Ant" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "Alligator" }));
+        round.RejectedAnswerIds.Add("Animal:ant");
+
+        var moderation = new CategoriesBackend.Core.Interfaces.ModerationContext(round.RejectedAnswerIds, []);
+        var scores = _sut.ComputeRoundScores(round, DefaultSettings(), moderation);
+
+        Assert.Equal(0, scores["p1"]);  // rejected → 0
+        Assert.Equal(10, scores["p2"]); // unique, unaffected
+    }
+
+    // --- Moderation: merge ---
+
+    [Fact]
+    public void ComputeRoundScores_MergedAnswers_BothGetSharedPoints()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "Cat" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "Cats" }));
+
+        var mergeGroup = new CategoriesBackend.Core.Models.MergeGroup
+        {
+            Id = "mg1",
+            Category = "Animal",
+            CanonicalAnswer = "Cat",
+            MergedNormalizedAnswers = ["cat", "cats"],
+        };
+        var moderation = new CategoriesBackend.Core.Interfaces.ModerationContext(new HashSet<string>(), [mergeGroup]);
+        var scores = _sut.ComputeRoundScores(round, DefaultSettings(), moderation);
+
+        Assert.Equal(5, scores["p1"]); // merged → shared points
+        Assert.Equal(5, scores["p2"]); // merged → shared points
+    }
+
+    [Fact]
+    public void ComputeRoundScores_MergedAndRejected_Combination()
+    {
+        var round = RoundWith(
+            ("p1", new Dictionary<string, string> { ["Animal"] = "Cat" }),
+            ("p2", new Dictionary<string, string> { ["Animal"] = "Cats" }),
+            ("p3", new Dictionary<string, string> { ["Animal"] = "Alligator" }));
+
+        // Merge cat + cats, reject alligator
+        var mergeGroup = new CategoriesBackend.Core.Models.MergeGroup
+        {
+            Id = "mg1",
+            Category = "Animal",
+            CanonicalAnswer = "Cat",
+            MergedNormalizedAnswers = ["cat", "cats"],
+        };
+        var rejected = new HashSet<string> { "Animal:alligator" };
+        var moderation = new CategoriesBackend.Core.Interfaces.ModerationContext(rejected, [mergeGroup]);
+        var scores = _sut.ComputeRoundScores(round, DefaultSettings(), moderation);
+
+        Assert.Equal(5, scores["p1"]);  // merged → shared
+        Assert.Equal(5, scores["p2"]);  // merged → shared
+        Assert.Equal(0, scores["p3"]);  // rejected → 0
     }
 }

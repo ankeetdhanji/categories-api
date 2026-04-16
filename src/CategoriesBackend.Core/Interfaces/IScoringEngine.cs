@@ -2,6 +2,11 @@ using CategoriesBackend.Core.Models;
 
 namespace CategoriesBackend.Core.Interfaces;
 
+/// <summary>Host-applied moderation state passed to the scoring engine.</summary>
+public record ModerationContext(
+    IReadOnlySet<string> RejectedAnswerIds,
+    IReadOnlyList<MergeGroup> MergeGroups);
+
 public interface IScoringEngine
 {
     /// <summary>
@@ -18,4 +23,12 @@ public interface IScoringEngine
         Round round,
         GameSettings settings,
         IReadOnlySet<string>? invalidDisputeIds);
+
+    /// <summary>
+    /// Computes scores applying both dispute corrections and host moderation (rejections + merges).
+    /// </summary>
+    Dictionary<string, int> ComputeRoundScores(
+        Round round,
+        GameSettings settings,
+        ModerationContext? moderation);
 }

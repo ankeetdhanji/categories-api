@@ -108,7 +108,6 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         var round = game.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber)
             ?? throw new InvalidOperationException($"Round {roundNumber} not found.");
 
-        // Build a lookup: normalizedAnswer → list of playerIds, per category
         var playerLookup = game.Players.ToDictionary(p => p.Id);
 
         // disputeId → set of playerIds who authored that disputed answer
@@ -118,17 +117,68 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
 
         var categories = round.Categories.Select(category =>
         {
+            // Build merge lookup for this category: normalizedAnswer → MergeGroup
+            var mergeGroupByNorm = round.MergeGroups
+                .Where(g => g.Category == category)
+                .SelectMany(g => g.MergedNormalizedAnswers.Select(norm => (norm, group: g)))
+                .ToDictionary(x => x.norm, x => x.group);
+
+            // Track which normalized answers are consumed by merge groups (to avoid double-rendering)
+            var mergedNorms = new HashSet<string>(mergeGroupByNorm.Keys);
+
             // Group players by their normalized answer for this category
-            var groups = round.Answers.Values
+            var allGroups = round.Answers.Values
                 .Where(pa => pa.NormalizedAnswers.TryGetValue(category, out var norm) && !string.IsNullOrWhiteSpace(norm))
                 .GroupBy(pa => pa.NormalizedAnswers[category])
                 .ToList();
 
-            var entries = groups.Select(group =>
+            var entries = new List<AnswerEntry>();
+
+            // Add one AnswerEntry per merge group (collapsed)
+            var emittedMergeGroupIds = new HashSet<string>();
+            foreach (var group in allGroups.Where(g => mergedNorms.Contains(g.Key)))
+            {
+                var mergeGroup = mergeGroupByNorm[group.Key];
+                if (!emittedMergeGroupIds.Add(mergeGroup.Id)) continue; // already emitted
+
+                // Collect all players across all normalized answers in this merge group
+                var allPlayersInGroup = allGroups
+                    .Where(g => mergeGroupByNorm.TryGetValue(g.Key, out var mg) && mg.Id == mergeGroup.Id)
+                    .SelectMany(g => g.Select(pa => playerLookup.TryGetValue(pa.PlayerId, out var p)
+                        ? new PlayerRef(p.Id, p.DisplayName)
+                        : new PlayerRef(pa.PlayerId, pa.PlayerId)))
+                    .DistinctBy(p => p.Id)
+                    .ToList();
+
+                var rawVariants = mergeGroup.MergedNormalizedAnswers
+                    .SelectMany(norm => allGroups
+                        .Where(g => g.Key == norm)
+                        .SelectMany(g => g.Select(pa => pa.Answers.TryGetValue(category, out var raw) ? raw : norm)))
+                    .Distinct()
+                    .ToList();
+
+                entries.Add(new AnswerEntry(
+                    RawAnswer: mergeGroup.CanonicalAnswer,
+                    NormalizedAnswer: mergeGroup.CanonicalAnswer.Trim().ToLowerInvariant(),
+                    Players: allPlayersInGroup,
+                    IsShared: true,
+                    IsUnique: false,
+                    IsDisputed: false,
+                    DisputeId: null,
+                    IsRejected: false,
+                    IsMerged: true,
+                    MergeGroupId: mergeGroup.Id,
+                    MergeCanonicalAnswer: mergeGroup.CanonicalAnswer,
+                    MergeVariants: rawVariants));
+            }
+
+            // Add regular (non-merged) answer entries
+            foreach (var group in allGroups.Where(g => !mergedNorms.Contains(g.Key)))
             {
                 var normalizedAnswer = group.Key;
                 var disputeId = $"{category}:{normalizedAnswer}";
                 var isDisputed = disputedAnswerIds.ContainsKey(disputeId);
+                var isRejected = round.RejectedAnswerIds.Contains($"{category}:{normalizedAnswer}");
 
                 var players = group
                     .Select(pa => playerLookup.TryGetValue(pa.PlayerId, out var p)
@@ -136,18 +186,18 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
                         : new PlayerRef(pa.PlayerId, pa.PlayerId))
                     .ToList();
 
-                // Use the raw answer from the first player in the group
                 var rawAnswer = group.First().Answers.TryGetValue(category, out var raw) ? raw : normalizedAnswer;
 
-                return new AnswerEntry(
+                entries.Add(new AnswerEntry(
                     RawAnswer: rawAnswer,
                     NormalizedAnswer: normalizedAnswer,
                     Players: players,
                     IsShared: group.Count() > 1,
                     IsUnique: group.Count() == 1,
                     IsDisputed: isDisputed,
-                    DisputeId: isDisputed ? disputeId : null);
-            }).ToList();
+                    DisputeId: isDisputed ? disputeId : null,
+                    IsRejected: isRejected));
+            }
 
             return new CategoryReview(category, entries);
         }).ToList();

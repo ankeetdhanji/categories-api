@@ -152,4 +152,8 @@ public static class GameHubEvents
 
     // State synchronization
     public const string GameStateSync = "GameStateSync";
+
+    // Host moderation
+    public const string AnswerRejected = "AnswerRejected";
+    public const string AnswerMerged = "AnswerMerged";
 }

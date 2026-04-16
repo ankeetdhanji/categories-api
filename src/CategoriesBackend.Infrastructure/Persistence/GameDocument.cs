@@ -144,6 +144,8 @@ internal class RoundDocument
     [FirestoreProperty] public List<DisputeDocument> Disputes { get; set; } = [];
     [FirestoreProperty] public Dictionary<string, Dictionary<string, bool>> DisputeVotes { get; set; } = [];
     [FirestoreProperty] public Dictionary<string, Dictionary<string, string>> CategoryLikes { get; set; } = [];
+    [FirestoreProperty] public List<string> RejectedAnswerIds { get; set; } = [];
+    [FirestoreProperty] public List<MergeGroupDocument> MergeGroups { get; set; } = [];
 
     public static RoundDocument FromRound(Round r) => new()
     {
@@ -162,6 +164,8 @@ internal class RoundDocument
         Disputes = r.Disputes.Select(DisputeDocument.From).ToList(),
         DisputeVotes = r.DisputeVotes.ToDictionary(kv => kv.Key, kv => new Dictionary<string, bool>(kv.Value)),
         CategoryLikes = r.CategoryLikes.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
+        RejectedAnswerIds = [.. r.RejectedAnswerIds],
+        MergeGroups = r.MergeGroups.Select(MergeGroupDocument.From).ToList(),
     };
 
     public Round ToRound() => new()
@@ -179,6 +183,8 @@ internal class RoundDocument
         Disputes = Disputes.Select(d => d.ToDispute()).ToList(),
         DisputeVotes = (DisputeVotes ?? []).ToDictionary(kv => kv.Key, kv => new Dictionary<string, bool>(kv.Value)),
         CategoryLikes = (CategoryLikes ?? []).ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
+        RejectedAnswerIds = [.. (RejectedAnswerIds ?? [])],
+        MergeGroups = (MergeGroups ?? []).Select(m => m.ToMergeGroup()).ToList(),
     };
 }
 
@@ -204,6 +210,31 @@ internal class PlayerAnswersDocument
         Answers = new Dictionary<string, string>(Answers),
         NormalizedAnswers = new Dictionary<string, string>(NormalizedAnswers),
         IsSubmitted = IsSubmitted,
+    };
+}
+
+[FirestoreData]
+internal class MergeGroupDocument
+{
+    [FirestoreProperty] public string Id { get; set; } = string.Empty;
+    [FirestoreProperty] public string Category { get; set; } = string.Empty;
+    [FirestoreProperty] public string CanonicalAnswer { get; set; } = string.Empty;
+    [FirestoreProperty] public List<string> MergedNormalizedAnswers { get; set; } = [];
+
+    public static MergeGroupDocument From(MergeGroup g) => new()
+    {
+        Id = g.Id,
+        Category = g.Category,
+        CanonicalAnswer = g.CanonicalAnswer,
+        MergedNormalizedAnswers = [.. g.MergedNormalizedAnswers],
+    };
+
+    public MergeGroup ToMergeGroup() => new()
+    {
+        Id = Id,
+        Category = Category,
+        CanonicalAnswer = CanonicalAnswer,
+        MergedNormalizedAnswers = [.. MergedNormalizedAnswers],
     };
 }
 

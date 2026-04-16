@@ -12,6 +12,7 @@ public class RoundsController(
     IRoundManager roundManager,
     IDisputeManager disputeManager,
     ISchedulingService schedulingService,
+    IHostModerationManager hostModerationManager,
     IHubContext<GameHub> hub) : ControllerBase
 {
     /// <summary>Host-only: begins the countdown for the next round and broadcasts GameCountdown to all clients.</summary>
@@ -195,6 +196,103 @@ public class RoundsController(
 
         return Ok(new { categoryIndex = nextIndex, isLastCategory });
     }
+
+    /// <summary>Host-only: reject an answer (awards 0 pts, muted badge).</summary>
+    [HttpPost("current/moderation/reject")]
+    public async Task<IActionResult> RejectAnswer(string gameId, [FromBody] RejectAnswerRequest request, CancellationToken ct)
+    {
+        var result = await hostModerationManager.RejectAnswerAsync(gameId, request.PlayerId, request.Category, request.NormalizedAnswer, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.AnswerRejected, new
+        {
+            category = request.Category,
+            normalizedAnswer = request.NormalizedAnswer,
+            isRejected = true,
+        }, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+        {
+            roundNumber = result.RoundNumber,
+            roundScores = result.RoundScores,
+            leaderboard = result.Leaderboard,
+        }, ct);
+
+        return Ok();
+    }
+
+    /// <summary>Host-only: undo a rejection.</summary>
+    [HttpDelete("current/moderation/reject")]
+    public async Task<IActionResult> UnrejectAnswer(string gameId, [FromBody] RejectAnswerRequest request, CancellationToken ct)
+    {
+        var result = await hostModerationManager.UnrejectAnswerAsync(gameId, request.PlayerId, request.Category, request.NormalizedAnswer, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.AnswerRejected, new
+        {
+            category = request.Category,
+            normalizedAnswer = request.NormalizedAnswer,
+            isRejected = false,
+        }, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+        {
+            roundNumber = result.RoundNumber,
+            roundScores = result.RoundScores,
+            leaderboard = result.Leaderboard,
+        }, ct);
+
+        return Ok();
+    }
+
+    /// <summary>Host-only: merge multiple answers into one duplicate group (5 pts each).</summary>
+    [HttpPost("current/moderation/merge")]
+    public async Task<IActionResult> MergeAnswers(string gameId, [FromBody] MergeAnswersRequest request, CancellationToken ct)
+    {
+        var (group, result) = await hostModerationManager.MergeAnswersAsync(
+            gameId, request.PlayerId, request.Category, request.NormalizedAnswers, request.CanonicalAnswer, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.AnswerMerged, new
+        {
+            mergeGroup = new
+            {
+                id = group.Id,
+                category = group.Category,
+                canonicalAnswer = group.CanonicalAnswer,
+                mergedNormalizedAnswers = group.MergedNormalizedAnswers,
+            },
+            isMerged = true,
+        }, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+        {
+            roundNumber = result.RoundNumber,
+            roundScores = result.RoundScores,
+            leaderboard = result.Leaderboard,
+        }, ct);
+
+        return Ok(new { mergeGroupId = group.Id });
+    }
+
+    /// <summary>Host-only: unmerge a previously merged group.</summary>
+    [HttpDelete("current/moderation/merge/{mergeGroupId}")]
+    public async Task<IActionResult> UnmergeAnswers(string gameId, string mergeGroupId, [FromBody] UnmergeAnswersRequest request, CancellationToken ct)
+    {
+        var result = await hostModerationManager.UnmergeAnswersAsync(gameId, request.PlayerId, mergeGroupId, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.AnswerMerged, new
+        {
+            isMerged = false,
+            mergeGroupId,
+        }, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.LeaderboardUpdated, new
+        {
+            roundNumber = result.RoundNumber,
+            roundScores = result.RoundScores,
+            leaderboard = result.Leaderboard,
+        }, ct);
+
+        return Ok();
+    }
 }
 
 public record StartNextRoundRequest(string PlayerId);
@@ -204,3 +302,6 @@ public record MarkDoneRequest(string PlayerId);
 public record DisputeVoteRequest(string PlayerId, bool IsValid);
 public record LikeAnswerRequest(string PlayerId, string Category, string NormalizedAnswer);
 public record AdvanceCategoryRequest(string PlayerId, int CurrentCategoryIndex);
+public record RejectAnswerRequest(string PlayerId, string Category, string NormalizedAnswer);
+public record MergeAnswersRequest(string PlayerId, string Category, List<string> NormalizedAnswers, string CanonicalAnswer);
+public record UnmergeAnswersRequest(string PlayerId);
