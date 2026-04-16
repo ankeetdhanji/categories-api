@@ -197,6 +197,30 @@ public class RoundsController(
         return Ok(new { categoryIndex = nextIndex, isLastCategory });
     }
 
+    /// <summary>Host-only: go back to the previous category in review phase. Broadcasts CategoryAdvanced to all clients.</summary>
+    [HttpPost("current/review/back")]
+    public async Task<IActionResult> GoBackCategory(string gameId, [FromBody] GoBackCategoryRequest request, CancellationToken ct)
+    {
+        var game = await gameManager.GetGameAsync(gameId, ct);
+        if (game.HostPlayerId != request.PlayerId)
+            return Forbid();
+
+        var round = game.Rounds[game.CurrentRoundIndex];
+
+        if (round.CurrentCategoryIndex <= 0)
+            return BadRequest(new { error = "Already at first category." });
+
+        var prevIndex = round.CurrentCategoryIndex - 1;
+        await roundManager.UpdateCurrentCategoryIndexAsync(gameId, prevIndex, ct);
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.CategoryAdvanced, new
+        {
+            categoryIndex = prevIndex,
+        }, ct);
+
+        return Ok(new { categoryIndex = prevIndex });
+    }
+
     /// <summary>Host-only: reject an answer (awards 0 pts, muted badge).</summary>
     [HttpPost("current/moderation/reject")]
     public async Task<IActionResult> RejectAnswer(string gameId, [FromBody] RejectAnswerRequest request, CancellationToken ct)
@@ -302,6 +326,7 @@ public record MarkDoneRequest(string PlayerId);
 public record DisputeVoteRequest(string PlayerId, bool IsValid);
 public record LikeAnswerRequest(string PlayerId, string Category, string NormalizedAnswer);
 public record AdvanceCategoryRequest(string PlayerId, int CurrentCategoryIndex);
+public record GoBackCategoryRequest(string PlayerId);
 public record RejectAnswerRequest(string PlayerId, string Category, string NormalizedAnswer);
 public record MergeAnswersRequest(string PlayerId, string Category, List<string> NormalizedAnswers, string CanonicalAnswer);
 public record UnmergeAnswersRequest(string PlayerId);
