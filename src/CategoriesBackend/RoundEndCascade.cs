@@ -29,9 +29,14 @@ internal static class RoundEndCascade
             roundNumber,
         }, ct);
 
-        // Wait up to 30 seconds for all active players to submit; poll every 500 ms.
+        // Give clients a moment to receive RoundEnded and send their final answers
+        // (including the auto-submit triggered by the RoundEnded event and any
+        // in-flight blur-saves that may have been issued while the timer wound down).
+        await Task.Delay(3000, CancellationToken.None);
+
+        // Wait up to 27 more seconds for any remaining players to submit; poll every 500 ms.
         // Falls through and scores regardless after the deadline.
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(27);
         while (DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(500, CancellationToken.None);
