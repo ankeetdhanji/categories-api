@@ -46,7 +46,8 @@ internal static class RoundEndCascade
                 .Where(p => p.IsConnected && !p.IsSpectating)
                 .Select(p => p.Id)
                 .ToHashSet();
-            if (activePlayers.Count == 0 || activePlayers.All(id => round.Answers.ContainsKey(id)))
+            if (activePlayers.Count == 0 ||
+                activePlayers.All(id => round.Answers.TryGetValue(id, out var pa) && pa.IsSubmitted))
                 break;
         }
 
