@@ -43,6 +43,8 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         if (round.Status == RoundStatus.Locked) return false; // already ended — idempotent
 
         round.Status = RoundStatus.Locked;
+        foreach (var pa in round.Answers.Values)
+            pa.IsSubmitted = false;
         await gameRepository.SaveAsync(game, ct);
         return true;
     }
