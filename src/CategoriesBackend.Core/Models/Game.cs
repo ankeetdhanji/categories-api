@@ -14,4 +14,5 @@ public class Game
     public int CurrentRoundIndex { get; set; } = -1;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool IsAwaitingHost { get; set; } = false;
+    public List<char> PlayedLetters { get; set; } = [];
 }
