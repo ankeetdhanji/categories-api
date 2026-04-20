@@ -63,7 +63,8 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
             throw new InvalidOperationException("Cannot start game while waiting for a host.");
 
         // Pre-generate rounds so the letter is known before the countdown fires
-        game.Rounds = GenerateRounds(game.Settings);
+        game.Rounds = GenerateRounds(game.Settings, game.PlayedLetters);
+        game.PlayedLetters.AddRange(game.Rounds.Select(r => r.Letter));
 
         var startAt = DateTimeOffset.UtcNow.AddSeconds(5);
         game.Status = GameStatus.Starting;
@@ -94,7 +95,10 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
             throw new InvalidOperationException("Game is not in Starting state.");
 
         if (game.Rounds.Count == 0)
-            game.Rounds = GenerateRounds(game.Settings);
+        {
+            game.Rounds = GenerateRounds(game.Settings, game.PlayedLetters);
+            game.PlayedLetters.AddRange(game.Rounds.Select(r => r.Letter));
+        }
 
         game.CurrentRoundIndex = 0;
         game.Status = GameStatus.InRound;
@@ -113,11 +117,21 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         return round;
     }
 
-    private static List<Round> GenerateRounds(GameSettings settings)
+    private static List<Round> GenerateRounds(GameSettings settings, List<char> playedLetters)
     {
         // Exclude letters that are awkward for this game type
         const string letterPool = "ABCDEFGHIJKLMNOPRSTW";
-        var letters = letterPool
+
+        var available = letterPool.Where(c => !playedLetters.Contains(c)).ToList();
+
+        // Not enough unplayed letters for a full game → reset and use full pool
+        if (available.Count < settings.MaxRounds)
+        {
+            playedLetters.Clear();
+            available = letterPool.ToList();
+        }
+
+        var letters = available
             .OrderBy(_ => Random.Shared.Next())
             .Take(settings.MaxRounds)
             .ToList();

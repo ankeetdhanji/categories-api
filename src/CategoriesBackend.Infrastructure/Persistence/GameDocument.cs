@@ -20,6 +20,7 @@ internal class GameDocument
     [FirestoreProperty] public List<RoundDocument> Rounds { get; set; } = [];
     [FirestoreProperty] public GameSettingsDocument Settings { get; set; } = new();
     [FirestoreProperty] public int CurrentRoundIndex { get; set; } = -1;
+    [FirestoreProperty] public List<string> PlayedLetters { get; set; } = [];
     [FirestoreProperty] public Timestamp CreatedAt { get; set; }
 
     public static GameDocument FromGame(Game game) => new()
@@ -32,6 +33,7 @@ internal class GameDocument
         Rounds = game.Rounds.Select(RoundDocument.FromRound).ToList(),
         Settings = GameSettingsDocument.FromSettings(game.Settings),
         CurrentRoundIndex = game.CurrentRoundIndex,
+        PlayedLetters = game.PlayedLetters.Select(c => c.ToString()).ToList(),
         CreatedAt = Timestamp.FromDateTimeOffset(game.CreatedAt),
     };
 
@@ -45,6 +47,7 @@ internal class GameDocument
         Rounds = Rounds.Select(r => r.ToRound()).ToList(),
         Settings = Settings.ToSettings(),
         CurrentRoundIndex = CurrentRoundIndex,
+        PlayedLetters = PlayedLetters.Where(s => s.Length > 0).Select(s => s[0]).ToList(),
         CreatedAt = CreatedAt.ToDateTimeOffset(),
     };
 }
