@@ -59,6 +59,9 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         if (game.Status != GameStatus.Lobby)
             throw new InvalidOperationException("Game is not in lobby state.");
 
+        if (game.IsAwaitingHost)
+            throw new InvalidOperationException("Cannot start game while waiting for a host.");
+
         // Pre-generate rounds so the letter is known before the countdown fires
         game.Rounds = GenerateRounds(game.Settings);
 
@@ -270,6 +273,52 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
             .ToList();
 
         return new BestAnswerBonusResult(votesByPlayer, winnerIds, bonusPerWinner, finalLeaderboard);
+    }
+
+    public async Task<ReopenLobbyResult> ReopenLobbyAsync(string gameId, string requestingPlayerId, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct)
+            ?? throw new KeyNotFoundException($"Game '{gameId}' not found.");
+
+        if (!game.Players.Any(p => p.Id == requestingPlayerId))
+            throw new UnauthorizedAccessException("Player is not in this game.");
+
+        // Idempotent: already a lobby
+        if (game.Status == GameStatus.Lobby)
+        {
+            var currentHost = game.Players.FirstOrDefault(p => p.Id == game.HostPlayerId);
+            return new ReopenLobbyResult(currentHost?.IsConnected == true, game.HostPlayerId, IsNewReopen: false);
+        }
+
+        if (game.Status != GameStatus.Finished)
+            throw new InvalidOperationException("Game can only be reopened after it has finished.");
+
+        game.Rounds = [];
+        game.CurrentRoundIndex = -1;
+
+        foreach (var player in game.Players)
+        {
+            player.TotalScore = 0;
+            player.BestAnswerVotes = 0;
+            player.IsSpectating = false;
+        }
+
+        var host = game.Players.FirstOrDefault(p => p.Id == game.HostPlayerId);
+        var hostConnected = host?.IsConnected == true;
+
+        game.Status = GameStatus.Lobby;
+        game.IsAwaitingHost = !hostConnected;
+
+        await gameRepository.SaveAsync(game, ct);
+        return new ReopenLobbyResult(hostConnected, game.HostPlayerId, IsNewReopen: true);
+    }
+
+    public async Task ResolveHostAwaitAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct);
+        if (game == null || !game.IsAwaitingHost) return;
+        game.IsAwaitingHost = false;
+        await gameRepository.SaveAsync(game, ct);
     }
 
     private static string GenerateJoinCode()
