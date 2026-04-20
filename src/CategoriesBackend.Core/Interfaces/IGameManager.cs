@@ -27,9 +27,13 @@ public interface IGameManager
     /// Host only.
     /// </summary>
     Task<BestAnswerBonusResult> ApplyBestAnswerBonusAsync(string gameId, string requestingPlayerId, CancellationToken ct = default);
+    Task<ReopenLobbyResult> ReopenLobbyAsync(string gameId, string requestingPlayerId, CancellationToken ct = default);
+    /// <summary>Clears the IsAwaitingHost flag. No-op if already false.</summary>
+    Task ResolveHostAwaitAsync(string gameId, CancellationToken ct = default);
 }
 
 public record StartGameResult(DateTimeOffset StartAt, char Letter, int RoundNumber);
+public record ReopenLobbyResult(bool OriginalHostIsConnected, string HostPlayerId, bool IsNewReopen);
 
 public record BestAnswerBonusResult(
     Dictionary<string, int> VotesByPlayer,

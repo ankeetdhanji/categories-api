@@ -25,6 +25,21 @@ public class GameHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
         tracker.Register(Context.ConnectionId, gameId, playerId);
         await gameManager.SetPlayerConnectedAsync(gameId, playerId, isConnected: true);
+
+        // If this player is the awaited host rejoining within the grace window, resolve immediately
+        try
+        {
+            var game = await gameManager.GetGameAsync(gameId);
+            if (game.IsAwaitingHost && game.HostPlayerId == playerId)
+            {
+                await gameManager.ResolveHostAwaitAsync(gameId);
+                await Clients.Group(gameId).SendAsync(GameHubEvents.HostChanged, new { hostPlayerId = playerId });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[GameHub] JoinGameGroup awaiting-host check failed for game {gameId}: {ex.Message}");
+        }
     }
 
     public async Task LeaveGameGroup(string gameId)
@@ -156,4 +171,7 @@ public static class GameHubEvents
     // Host moderation
     public const string AnswerRejected = "AnswerRejected";
     public const string AnswerMerged = "AnswerMerged";
+
+    // Lobby lifecycle
+    public const string LobbyReopened = "LobbyReopened";
 }

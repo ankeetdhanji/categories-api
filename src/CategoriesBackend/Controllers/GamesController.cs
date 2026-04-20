@@ -126,6 +126,64 @@ public class GamesController(IGameManager gameManager, ISchedulingService schedu
             leaderboard = result.FinalLeaderboard,
         });
     }
+
+    /// <summary>Reopens the lobby after the game has finished, resetting scores and allowing a new game.</summary>
+    [HttpPost("{gameId}/reopen")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ReopenLobby(string gameId, [FromBody] ReopenLobbyRequest request, CancellationToken ct)
+    {
+        var result = await gameManager.ReopenLobbyAsync(gameId, request.PlayerId, ct);
+        var game = await gameManager.GetGameAsync(gameId, ct);
+
+        var hostAwaitDeadline = result.OriginalHostIsConnected
+            ? (DateTimeOffset?)null
+            : DateTimeOffset.UtcNow.AddSeconds(30);
+
+        await hub.Clients.Group(gameId).SendAsync(
+            GameHubEvents.LobbyReopened,
+            new
+            {
+                hostPlayerId = result.HostPlayerId,
+                awaitingHost = !result.OriginalHostIsConnected,
+                hostAwaitDeadline,
+                players = game.Players.Select(p => new
+                {
+                    id = p.Id,
+                    displayName = p.DisplayName,
+                    isHost = p.Id == result.HostPlayerId,
+                    isGuest = p.IsGuest,
+                    isSpectating = p.IsSpectating,
+                    totalScore = p.TotalScore,
+                }),
+            },
+            ct);
+
+        if (!result.OriginalHostIsConnected && result.IsNewReopen)
+            _ = SchedulePostReopenHostTransferAsync(gameId, result.HostPlayerId);
+
+        return Ok();
+    }
+
+    private async Task SchedulePostReopenHostTransferAsync(string gameId, string currentHostId)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+
+            var game = await gameManager.GetGameAsync(gameId);
+            if (!game.IsAwaitingHost) return;
+
+            var newHostId = await gameManager.TransferHostAsync(gameId, currentHostId);
+            await gameManager.ResolveHostAwaitAsync(gameId);
+
+            if (newHostId != null)
+                await hub.Clients.Group(gameId).SendAsync(GameHubEvents.HostChanged, new { hostPlayerId = newHostId });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[GamesController] SchedulePostReopenHostTransferAsync failed for game {gameId}: {ex.Message}");
+        }
+    }
 }
 
 // --- Request models ---
@@ -135,6 +193,7 @@ public record StartGameRequest(string PlayerId);
 public record UpdateSettingsRequest(string PlayerId, GameSettingsDto Settings);
 public record StartGameResponse(DateTimeOffset StartAt);
 public record FinalizeGameRequest(string PlayerId);
+public record ReopenLobbyRequest(string PlayerId);
 
 // --- Response models ---
 public record CreateGameResponse(string GameId, string JoinCode, GameSettingsDto Settings);
