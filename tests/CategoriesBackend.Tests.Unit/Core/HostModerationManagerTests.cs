@@ -8,7 +8,36 @@ namespace CategoriesBackend.Tests.Unit.Core;
 
 public class HostModerationManagerTests
 {
-    private readonly IGameRepository _repo = Substitute.For<IGameRepository>();
+    /// <summary>
+    /// Concrete stub that executes RunInTransactionAsync lambdas in-process,
+    /// avoiding NSubstitute's limitations with generic method matching.
+    /// </summary>
+    private sealed class FakeGameRepo : IGameRepository
+    {
+        public Game? Game { get; set; }
+
+        public Task<Game?> GetByIdAsync(string gameId, CancellationToken ct = default) => Task.FromResult(Game);
+        public Task<Game?> GetByJoinCodeAsync(string joinCode, CancellationToken ct = default) => Task.FromResult<Game?>(null);
+        public Task SaveAsync(Game game, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> UpdateAnswersAsync(string gameId, int roundIndex, string playerId, PlayerAnswers answers, CancellationToken ct = default) => Task.FromResult(true);
+        public Task DeleteAsync(string gameId, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<T> RunInTransactionAsync<T>(string gameId, Func<Game, (T result, Game? updatedGame)> operation, CancellationToken ct = default)
+        {
+            if (Game is null) return Task.FromException<T>(new InvalidOperationException("Game not configured in stub"));
+            try
+            {
+                var (result, _) = operation(Game);
+                return Task.FromResult(result);
+            }
+            catch (Exception ex)
+            {
+                return Task.FromException<T>(ex);
+            }
+        }
+    }
+
+    private readonly FakeGameRepo _repo = new();
     private readonly IScoringEngine _scoringEngine = Substitute.For<IScoringEngine>();
     private readonly HostModerationManager _sut;
 
@@ -68,8 +97,7 @@ public class HostModerationManagerTests
     [Fact]
     public async Task RejectAnswer_ThrowsForNonHost()
     {
-        var game = MakeGame();
-        _repo.GetByIdAsync(GameId, Arg.Any<CancellationToken>()).Returns(game);
+        _repo.Game = MakeGame();
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
             () => _sut.RejectAnswerAsync(GameId, NonHostId, "Animal", "ant"));
@@ -79,7 +107,7 @@ public class HostModerationManagerTests
     public async Task RejectAnswer_SetsKeyAndRecalculatesScores()
     {
         var game = MakeGame();
-        _repo.GetByIdAsync(GameId, Arg.Any<CancellationToken>()).Returns(game);
+        _repo.Game = game;
         _scoringEngine
             .ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<ModerationContext?>())
             .Returns(new Dictionary<string, int> { ["p1"] = 0, ["p2"] = 5 });
@@ -96,7 +124,7 @@ public class HostModerationManagerTests
     {
         var game = MakeGame();
         game.Rounds[0].RejectedAnswerIds.Add("Animal:ant");
-        _repo.GetByIdAsync(GameId, Arg.Any<CancellationToken>()).Returns(game);
+        _repo.Game = game;
         _scoringEngine
             .ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<ModerationContext?>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
@@ -111,7 +139,7 @@ public class HostModerationManagerTests
     public async Task MergeAnswers_CreatesMergeGroupAndRecalculatesScores()
     {
         var game = MakeGame();
-        _repo.GetByIdAsync(GameId, Arg.Any<CancellationToken>()).Returns(game);
+        _repo.Game = game;
         _scoringEngine
             .ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<ModerationContext?>())
             .Returns(new Dictionary<string, int> { ["p1"] = 5, ["p2"] = 5 });
@@ -144,7 +172,7 @@ public class HostModerationManagerTests
         game.Players[0].TotalScore = 5;
         game.Players[1].TotalScore = 5;
 
-        _repo.GetByIdAsync(GameId, Arg.Any<CancellationToken>()).Returns(game);
+        _repo.Game = game;
         _scoringEngine
             .ComputeRoundScores(Arg.Any<Round>(), Arg.Any<GameSettings>(), Arg.Any<ModerationContext?>())
             .Returns(new Dictionary<string, int> { ["p1"] = 10, ["p2"] = 5 });
