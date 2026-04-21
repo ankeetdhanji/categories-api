@@ -243,6 +243,23 @@ public class RoundManager(IGameRepository gameRepository, IScoringEngine scoring
         return activePlayerIds.Count > 0 && activePlayerIds.All(id => round.DonePlayerIds.Contains(id));
     }
 
+    public async Task<bool> UnmarkPlayerDoneAsync(string gameId, string playerId, CancellationToken ct = default)
+    {
+        var game = await GetGameAsync(gameId, ct);
+
+        if (game.CurrentRoundIndex < 0 || game.CurrentRoundIndex >= game.Rounds.Count)
+            return false;
+
+        var round = game.Rounds[game.CurrentRoundIndex];
+        if (round.Status != RoundStatus.Answering)
+            return false; // round already locked — undo not possible
+
+        if (round.DonePlayerIds.Remove(playerId))
+            await gameRepository.SaveAsync(game, ct);
+
+        return true;
+    }
+
     public async Task UpdateCurrentCategoryIndexAsync(string gameId, int index, CancellationToken ct = default)
     {
         var game = await GetGameAsync(gameId, ct);

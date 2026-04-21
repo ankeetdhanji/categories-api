@@ -14,6 +14,8 @@ public interface IRoundManager
     Task LikeAnswerAsync(string gameId, int roundNumber, string playerId, string category, string normalizedAnswer, CancellationToken ct = default);
     /// <summary>Marks a player as done for the current round. Returns true when all connected players are done.</summary>
     Task<bool> MarkPlayerDoneAsync(string gameId, string playerId, CancellationToken ct = default);
+    /// <summary>Removes a player's done status. Returns false if the round is no longer in the Answering phase.</summary>
+    Task<bool> UnmarkPlayerDoneAsync(string gameId, string playerId, CancellationToken ct = default);
     /// <summary>Persists the current review category index. Used to enforce idempotent category advances.</summary>
     Task UpdateCurrentCategoryIndexAsync(string gameId, int index, CancellationToken ct = default);
     /// <summary>
