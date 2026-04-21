@@ -35,7 +35,7 @@ public class RoundsController(
         }, ct);
 
         var delay = result.StartAt - DateTimeOffset.UtcNow;
-        await schedulingService.ScheduleNextRoundAsync(gameId, delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct);
+        await schedulingService.ScheduleNextRoundAsync(gameId, result.SessionId, delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct);
 
         return Ok();
     }

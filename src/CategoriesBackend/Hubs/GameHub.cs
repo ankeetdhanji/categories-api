@@ -83,7 +83,7 @@ public class GameHub(
 
             if (game.HostPlayerId == playerId && game.Status != GameStatus.Finished)
             {
-                _ = ScheduleHostTransferAsync(gameId, playerId);
+                _ = ScheduleHostTransferAsync(gameId);
             }
         }
 
@@ -115,16 +115,16 @@ public class GameHub(
         }
     }
 
-    private async Task ScheduleHostTransferAsync(string gameId, string disconnectedHostId)
+    private async Task ScheduleHostTransferAsync(string gameId)
     {
-        await Task.Delay(TimeSpan.FromSeconds(HostGraceWindowSeconds));
-
-        var newHostId = await gameManager.TransferHostAsync(gameId, disconnectedHostId);
-        if (newHostId != null)
+        try
         {
-            await hubContext.Clients.Group(gameId).SendAsync(
-                GameHubEvents.HostChanged,
-                new { hostPlayerId = newHostId });
+            var game = await gameManager.GetGameAsync(gameId);
+            await schedulingService.ScheduleHostTransferAsync(gameId, game.SessionId, HostGraceWindowSeconds);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[GameHub] ScheduleHostTransferAsync failed for game {gameId}: {ex.Message}");
         }
     }
 }
@@ -174,4 +174,7 @@ public static class GameHubEvents
 
     // Lobby lifecycle
     public const string LobbyReopened = "LobbyReopened";
+
+    // Game abandoned (no eligible host after grace window)
+    public const string GameAbandoned = "GameAbandoned";
 }

@@ -5,34 +5,22 @@ namespace CategoriesBackend.Core.Managers;
 
 public class HostModerationManager(IGameRepository gameRepository, IScoringEngine scoringEngine) : IHostModerationManager
 {
-    public async Task<RoundScoreResult> RejectAnswerAsync(
+    public Task<RoundScoreResult> RejectAnswerAsync(
         string gameId, string hostPlayerId,
         string category, string normalizedAnswer,
         CancellationToken ct = default)
     {
-        var game = await GetGameAsync(gameId, ct);
-        VerifyHost(game, hostPlayerId);
-
-        var round = game.Rounds[game.CurrentRoundIndex];
         var key = $"{category}:{normalizedAnswer}";
-        round.RejectedAnswerIds.Add(key);
-
-        return await RecalculateAndSave(game, round, ct);
+        return RecalculateAndSave(gameId, hostPlayerId, round => round.RejectedAnswerIds.Add(key), ct);
     }
 
-    public async Task<RoundScoreResult> UnrejectAnswerAsync(
+    public Task<RoundScoreResult> UnrejectAnswerAsync(
         string gameId, string hostPlayerId,
         string category, string normalizedAnswer,
         CancellationToken ct = default)
     {
-        var game = await GetGameAsync(gameId, ct);
-        VerifyHost(game, hostPlayerId);
-
-        var round = game.Rounds[game.CurrentRoundIndex];
         var key = $"{category}:{normalizedAnswer}";
-        round.RejectedAnswerIds.Remove(key);
-
-        return await RecalculateAndSave(game, round, ct);
+        return RecalculateAndSave(gameId, hostPlayerId, round => round.RejectedAnswerIds.Remove(key), ct);
     }
 
     public async Task<(MergeGroup Group, RoundScoreResult Scores)> MergeAnswersAsync(
@@ -40,72 +28,82 @@ public class HostModerationManager(IGameRepository gameRepository, IScoringEngin
         string category, List<string> normalizedAnswers, string canonicalAnswer,
         CancellationToken ct = default)
     {
-        var game = await GetGameAsync(gameId, ct);
-        VerifyHost(game, hostPlayerId);
+        // Generate the ID outside the transaction lambda so it is stable across retries.
+        var groupId = Guid.NewGuid().ToString();
+        MergeGroup? capturedGroup = null;
 
-        var round = game.Rounds[game.CurrentRoundIndex];
-
-        var group = new MergeGroup
+        var scores = await RecalculateAndSave(gameId, hostPlayerId, round =>
         {
-            Id = Guid.NewGuid().ToString(),
-            Category = category,
-            CanonicalAnswer = canonicalAnswer,
-            MergedNormalizedAnswers = [.. normalizedAnswers],
-        };
-        round.MergeGroups.Add(group);
+            var group = new MergeGroup
+            {
+                Id = groupId,
+                Category = category,
+                CanonicalAnswer = canonicalAnswer,
+                MergedNormalizedAnswers = [.. normalizedAnswers],
+            };
+            round.MergeGroups.Add(group);
+            capturedGroup = group;
+        }, ct);
 
-        var scores = await RecalculateAndSave(game, round, ct);
-        return (group, scores);
+        return (capturedGroup!, scores);
     }
 
-    public async Task<RoundScoreResult> UnmergeAnswersAsync(
+    public Task<RoundScoreResult> UnmergeAnswersAsync(
         string gameId, string hostPlayerId,
         string mergeGroupId,
         CancellationToken ct = default)
     {
-        var game = await GetGameAsync(gameId, ct);
-        VerifyHost(game, hostPlayerId);
-
-        var round = game.Rounds[game.CurrentRoundIndex];
-        round.MergeGroups.RemoveAll(g => g.Id == mergeGroupId);
-
-        return await RecalculateAndSave(game, round, ct);
+        return RecalculateAndSave(gameId, hostPlayerId,
+            round => round.MergeGroups.RemoveAll(g => g.Id == mergeGroupId), ct);
     }
 
-    private async Task<RoundScoreResult> RecalculateAndSave(Game game, Round round, CancellationToken ct)
+    /// <summary>
+    /// Applies <paramref name="mutation"/> to the current round inside a Firestore transaction, then
+    /// recomputes and persists scores atomically. Retried automatically on write conflicts.
+    /// </summary>
+    private async Task<RoundScoreResult> RecalculateAndSave(
+        string gameId, string hostPlayerId,
+        Action<Round> mutation,
+        CancellationToken ct)
     {
-        var invalidDisputeIds = round.Disputes
-            .Where(d => d.Status == DisputeStatus.Invalid)
-            .Select(d => d.Id)
-            .ToHashSet();
-
-        // Combine invalid dispute IDs with host rejections
-        var allExclusions = new HashSet<string>(invalidDisputeIds);
-        allExclusions.UnionWith(round.RejectedAnswerIds);
-
-        var moderation = new ModerationContext(allExclusions, round.MergeGroups);
-        var newScores = scoringEngine.ComputeRoundScores(round, game.Settings, moderation);
-
-        // Delta-apply score changes
-        foreach (var player in game.Players)
+        return await gameRepository.RunInTransactionAsync<RoundScoreResult>(gameId, game =>
         {
-            if (player.IsSpectating) continue;
-            var oldScore = round.RoundScores.GetValueOrDefault(player.Id, 0);
-            var newScore = newScores.GetValueOrDefault(player.Id, 0);
-            player.TotalScore += newScore - oldScore;
-        }
+            VerifyHost(game, hostPlayerId);
 
-        round.RoundScores = newScores;
-        await gameRepository.SaveAsync(game, ct);
+            var round = game.Rounds[game.CurrentRoundIndex];
+            mutation(round);
 
-        var leaderboard = game.Players
-            .OrderByDescending(p => p.TotalScore)
-            .Select(p => new LeaderboardEntry(
-                p.Id, p.DisplayName, p.TotalScore,
-                newScores.GetValueOrDefault(p.Id, 0)))
-            .ToList();
+            var invalidDisputeIds = round.Disputes
+                .Where(d => d.Status == DisputeStatus.Invalid)
+                .Select(d => d.Id)
+                .ToHashSet();
 
-        return new RoundScoreResult(round.RoundNumber, newScores, leaderboard);
+            var allExclusions = new HashSet<string>(invalidDisputeIds);
+            allExclusions.UnionWith(round.RejectedAnswerIds);
+
+            var moderation = new ModerationContext(allExclusions, round.MergeGroups);
+            var newScores = scoringEngine.ComputeRoundScores(round, game.Settings, moderation);
+
+            foreach (var player in game.Players)
+            {
+                if (player.IsSpectating) continue;
+                var oldScore = round.RoundScores.GetValueOrDefault(player.Id, 0);
+                var newScore = newScores.GetValueOrDefault(player.Id, 0);
+                player.TotalScore += newScore - oldScore;
+            }
+
+            round.RoundScores = newScores;
+
+            var leaderboard = game.Players
+                .OrderByDescending(p => p.TotalScore)
+                .Select(p => new LeaderboardEntry(
+                    p.Id, p.DisplayName, p.TotalScore,
+                    newScores.GetValueOrDefault(p.Id, 0)))
+                .ToList();
+
+            var result = new RoundScoreResult(round.RoundNumber, newScores, leaderboard);
+            return (result, game);
+        }, ct);
     }
 
     private static void VerifyHost(Game game, string playerId)
@@ -113,8 +111,4 @@ public class HostModerationManager(IGameRepository gameRepository, IScoringEngin
         if (game.HostPlayerId != playerId)
             throw new UnauthorizedAccessException("Only the host can moderate answers.");
     }
-
-    private async Task<Game> GetGameAsync(string gameId, CancellationToken ct)
-        => await gameRepository.GetByIdAsync(gameId, ct)
-           ?? throw new InvalidOperationException($"Game '{gameId}' not found.");
 }
