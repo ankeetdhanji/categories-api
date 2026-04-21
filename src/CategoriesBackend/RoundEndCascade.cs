@@ -76,11 +76,14 @@ internal static class RoundEndCascade
                 }),
             }, ct);
 
+            // Fetch game here to get the current sessionId for task payloads
+            var gameForSession = await gameManager.GetGameAsync(gameId, ct);
+
             // Schedule dispute close timeout for each unique dispute
             foreach (var dispute in disputes.GroupBy(d => d.Id).Select(g => g.First()))
             {
                 await schedulingService.ScheduleDisputeCloseAsync(
-                    gameId, dispute.Id,
+                    gameId, gameForSession.SessionId, dispute.Id,
                     TimeSpan.FromSeconds(30),
                     ct);
             }

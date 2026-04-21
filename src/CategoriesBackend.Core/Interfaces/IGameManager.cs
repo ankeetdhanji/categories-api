@@ -30,10 +30,12 @@ public interface IGameManager
     Task<ReopenLobbyResult> ReopenLobbyAsync(string gameId, string requestingPlayerId, CancellationToken ct = default);
     /// <summary>Clears the IsAwaitingHost flag. No-op if already false.</summary>
     Task ResolveHostAwaitAsync(string gameId, CancellationToken ct = default);
+    /// <summary>Marks the game as abandoned (no eligible host found). No-op if already abandoned.</summary>
+    Task MarkGameAbandonedAsync(string gameId, CancellationToken ct = default);
 }
 
-public record StartGameResult(DateTimeOffset StartAt, char Letter, int RoundNumber);
-public record ReopenLobbyResult(bool OriginalHostIsConnected, string HostPlayerId, bool IsNewReopen);
+public record StartGameResult(DateTimeOffset StartAt, char Letter, int RoundNumber, string SessionId);
+public record ReopenLobbyResult(bool OriginalHostIsConnected, string HostPlayerId, bool IsNewReopen, string SessionId);
 
 public record BestAnswerBonusResult(
     Dictionary<string, int> VotesByPlayer,

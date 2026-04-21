@@ -13,6 +13,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
             Id = Guid.NewGuid().ToString("N"),
             JoinCode = GenerateJoinCode(),
             HostPlayerId = hostPlayerId,
+            SessionId = Guid.NewGuid().ToString("N"),
             Status = GameStatus.Lobby,
             Players =
             [
@@ -43,7 +44,9 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         if (game.Players.Any(p => p.Id == playerId))
             return game; // already in the game
 
-        var isSpectating = game.Status != GameStatus.Lobby;
+        // Players joining during countdown (Starting) are active participants — BeginRoundAsync will flip
+        // them too, but this handles the race where they join after the flip has already fired.
+        var isSpectating = game.Status != GameStatus.Lobby && game.Status != GameStatus.Starting;
         game.Players.Add(new Player { Id = playerId, DisplayName = displayName, IsConnected = true, IsSpectating = isSpectating });
         await gameRepository.SaveAsync(game, ct);
         return game;
@@ -71,7 +74,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         await gameRepository.SaveAsync(game, ct);
 
         var firstRound = game.Rounds[0];
-        return new StartGameResult(startAt, firstRound.Letter, firstRound.RoundNumber);
+        return new StartGameResult(startAt, firstRound.Letter, firstRound.RoundNumber, game.SessionId);
     }
 
     public async Task<StartGameResult?> PrepareNextRoundAsync(string gameId, CancellationToken ct = default)
@@ -85,7 +88,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         await gameRepository.SaveAsync(game, ct);
 
         var nextRound = game.Rounds[nextIndex];
-        return new StartGameResult(startAt, nextRound.Letter, nextRound.RoundNumber);
+        return new StartGameResult(startAt, nextRound.Letter, nextRound.RoundNumber, game.SessionId);
     }
 
     public async Task<Round> BeginRoundAsync(string gameId, CancellationToken ct = default)
@@ -241,10 +244,17 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
 
         foreach (var round in game.Rounds)
         {
+            // Exclude rejected and invalid-disputed answers from like tallying (Gap #7)
+            var roundExclusions = new HashSet<string>(round.RejectedAnswerIds);
+            foreach (var d in round.Disputes.Where(d => d.Status == DisputeStatus.Invalid))
+                roundExclusions.Add(d.Id); // Dispute.Id is "{category}:{normalizedAnswer}"
+
             foreach (var (category, categoryLikes) in round.CategoryLikes)
             {
                 foreach (var (_, likedNorm) in categoryLikes)
                 {
+                    if (roundExclusions.Contains($"{category}:{likedNorm}")) continue;
+
                     foreach (var (authorId, playerAnswers) in round.Answers)
                     {
                         if (playerAnswers.NormalizedAnswers.TryGetValue(category, out var norm)
@@ -268,13 +278,19 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
             ? votesByPlayer.Where(kv => kv.Value == maxVotes).Select(kv => kv.Key).ToList()
             : [];
 
-        // Integer split: bonus per winner (floor division; remainder is dropped)
-        var bonusPerWinner = winnerIds.Count > 0 ? game.Settings.BestAnswerBonusPoints / winnerIds.Count : 0;
+        // Integer split: floor per winner, remainder goes to the first winner (Gap #12)
+        var winnerCount = winnerIds.Count;
+        var bonusPerWinner = winnerCount > 0 ? game.Settings.BestAnswerBonusPoints / winnerCount : 0;
+        var firstWinnerId = winnerIds.FirstOrDefault();
 
         foreach (var player in game.Players)
         {
-            if (winnerIds.Contains(player.Id))
-                player.TotalScore += bonusPerWinner;
+            if (!winnerIds.Contains(player.Id)) continue;
+            // First winner absorbs the remainder so total distributed == BestAnswerBonusPoints
+            var bonus = player.Id == firstWinnerId
+                ? game.Settings.BestAnswerBonusPoints - bonusPerWinner * (winnerCount - 1)
+                : bonusPerWinner;
+            player.TotalScore += bonus;
         }
 
         game.Status = GameStatus.Finished;
@@ -301,7 +317,7 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
         if (game.Status == GameStatus.Lobby)
         {
             var currentHost = game.Players.FirstOrDefault(p => p.Id == game.HostPlayerId);
-            return new ReopenLobbyResult(currentHost?.IsConnected == true, game.HostPlayerId, IsNewReopen: false);
+            return new ReopenLobbyResult(currentHost?.IsConnected == true, game.HostPlayerId, IsNewReopen: false, game.SessionId);
         }
 
         if (game.Status != GameStatus.Finished)
@@ -322,15 +338,26 @@ public class GameManager(IGameRepository gameRepository) : IGameManager
 
         game.Status = GameStatus.Lobby;
         game.IsAwaitingHost = !hostConnected;
+        game.IsAbandoned = false;
+        game.SessionId = Guid.NewGuid().ToString("N"); // new session — invalidates stale Cloud Tasks
 
         await gameRepository.SaveAsync(game, ct);
-        return new ReopenLobbyResult(hostConnected, game.HostPlayerId, IsNewReopen: true);
+        return new ReopenLobbyResult(hostConnected, game.HostPlayerId, IsNewReopen: true, game.SessionId);
     }
 
     public async Task ResolveHostAwaitAsync(string gameId, CancellationToken ct = default)
     {
         var game = await gameRepository.GetByIdAsync(gameId, ct);
         if (game == null || !game.IsAwaitingHost) return;
+        game.IsAwaitingHost = false;
+        await gameRepository.SaveAsync(game, ct);
+    }
+
+    public async Task MarkGameAbandonedAsync(string gameId, CancellationToken ct = default)
+    {
+        var game = await gameRepository.GetByIdAsync(gameId, ct);
+        if (game == null || game.IsAbandoned) return;
+        game.IsAbandoned = true;
         game.IsAwaitingHost = false;
         await gameRepository.SaveAsync(game, ct);
     }

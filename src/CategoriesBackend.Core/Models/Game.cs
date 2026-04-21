@@ -14,5 +14,8 @@ public class Game
     public int CurrentRoundIndex { get; set; } = -1;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool IsAwaitingHost { get; set; } = false;
+    public bool IsAbandoned { get; set; } = false;
+    /// <summary>Regenerated on ReopenLobby. Included in Cloud Tasks payloads so stale tasks from prior sessions are ignored.</summary>
+    public string SessionId { get; set; } = string.Empty;
     public List<char> PlayedLetters { get; set; } = [];
 }

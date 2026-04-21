@@ -59,7 +59,7 @@ public class GamesController(IGameManager gameManager, ISchedulingService schedu
 
         // Schedule begin-round after countdown delay
         var delay = startAt - DateTimeOffset.UtcNow;
-        await schedulingService.ScheduleBeginRoundAsync(gameId, delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct);
+        await schedulingService.ScheduleBeginRoundAsync(gameId, result.SessionId, delay > TimeSpan.Zero ? delay : TimeSpan.Zero, ct);
 
         return Ok(new StartGameResponse(startAt));
     }
@@ -159,30 +159,9 @@ public class GamesController(IGameManager gameManager, ISchedulingService schedu
             ct);
 
         if (!result.OriginalHostIsConnected && result.IsNewReopen)
-            _ = SchedulePostReopenHostTransferAsync(gameId, result.HostPlayerId);
+            await schedulingService.ScheduleHostTransferAsync(gameId, result.SessionId, 30, ct);
 
         return Ok();
-    }
-
-    private async Task SchedulePostReopenHostTransferAsync(string gameId, string currentHostId)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromSeconds(30));
-
-            var game = await gameManager.GetGameAsync(gameId);
-            if (!game.IsAwaitingHost) return;
-
-            var newHostId = await gameManager.TransferHostAsync(gameId, currentHostId);
-            await gameManager.ResolveHostAwaitAsync(gameId);
-
-            if (newHostId != null)
-                await hub.Clients.Group(gameId).SendAsync(GameHubEvents.HostChanged, new { hostPlayerId = newHostId });
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[GamesController] SchedulePostReopenHostTransferAsync failed for game {gameId}: {ex.Message}");
-        }
     }
 }
 
