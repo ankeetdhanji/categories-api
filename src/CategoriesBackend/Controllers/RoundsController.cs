@@ -98,6 +98,23 @@ public class RoundsController(
         return Ok(new { allDone = true });
     }
 
+    /// <summary>Player undoes their done status, provided the round hasn't ended yet.</summary>
+    [HttpDelete("current/done")]
+    public async Task<IActionResult> UnmarkDone(string gameId, [FromBody] MarkDoneRequest request, CancellationToken ct)
+    {
+        var success = await roundManager.UnmarkPlayerDoneAsync(gameId, request.PlayerId, ct);
+        if (!success)
+            return Conflict(new { error = "Round is no longer in answering phase." });
+
+        await hub.Clients.Group(gameId).SendAsync(GameHubEvents.PlayerDone, new
+        {
+            playerId = request.PlayerId,
+            isDone = false,
+        }, ct);
+
+        return NoContent();
+    }
+
     [HttpGet("{roundNumber}/results")]
     public async Task<IActionResult> GetRoundResults(string gameId, int roundNumber, CancellationToken ct)
     {
